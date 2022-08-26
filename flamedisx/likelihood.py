@@ -241,6 +241,10 @@ class LogLikelihood:
 
         self.set_data(data, data_is_annotated=data_is_annotated)
 
+    def set_rate_multiplier_bounds(self, **rm_bounds):
+        for source, bounds in rm_bounds.items():
+            self.default_bounds[f'{source}_rate_multiplier'] = bounds
+
     def set_data(self,
                  data: ty.Union[pd.DataFrame, ty.Dict[str, pd.DataFrame]],
                  data_is_annotated=False):
