@@ -369,6 +369,8 @@ class InvalidEventTimes(Exception):
 
 @export
 class WIMPEnergySpectrum(VariableEnergySpectrum):
+    max_dim_size = {'energy': 100}
+
     model_attributes = ('pretend_wimps_dont_modulate',
                         'mw',
                         'sigma_nucleon',
