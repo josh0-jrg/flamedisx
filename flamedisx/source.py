@@ -352,6 +352,7 @@ class Source:
                  input_column_index=None,
                  input_data_tensor=None,
                  output_data_tensor=None,
+                 ignore_priors=False,
                  _skip_tf_init=False,
                  _skip_bounds_computation=False,
                  **params):
@@ -389,7 +390,7 @@ class Source:
         if not data_is_annotated:
             self.add_extra_columns(self.data)
             if not _skip_bounds_computation:
-                self._annotate()
+                self._annotate(ignore_priors=ignore_priors)
                 self._calculate_dimsizes()
 
         if not _skip_tf_init:
