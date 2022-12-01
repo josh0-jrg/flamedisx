@@ -191,9 +191,10 @@ class nestSource(fd.BlockModelSource):
 @export
 class nestERSource(nestSource):
     def __init__(self, *args, energy_min=0.01, energy_max=10., num_energies=1000, **kwargs):
-        self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
-                                fd.float_type())
-        self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
+        if not hasattr(self, 'energies'):
+            self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
+                                    fd.float_type())
+            self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
         super().__init__(*args, **kwargs)
 
     model_blocks = (
@@ -341,9 +342,10 @@ class nestERSource(nestSource):
 @export
 class nestNRSource(nestSource):
     def __init__(self, *args, energy_min=0.01, energy_max=150., num_energies=1000, **kwargs):
-        self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
-                                fd.float_type())
-        self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
+        if not hasattr(self, 'energies'):
+            self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
+                                    fd.float_type())
+            self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
         super().__init__(*args, **kwargs)
 
     model_blocks = (
