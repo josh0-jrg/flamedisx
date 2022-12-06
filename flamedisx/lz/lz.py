@@ -300,11 +300,23 @@ class LZXe127Source(LZSource, fd.nest.Xe127Source):
         if ('detector' not in kwargs):
             kwargs['detector'] = 'lz'
         super().__init__(*args, **kwargs)
-
+@export
+class LZSpatialXe127Source(LZSource, fd.nest.SpatialXe127Source):
+    def __init__(self, *args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'lz'
+        super().__init__(*args, **kwargs)
 
 @export
 class LZB8Source(LZSource, fd.nest.B8Source):
     def __init__(self, *args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'lz'
+        super().__init__(*args, **kwargs)
+@export
+class LZDetNRSource(LZSource, fd.nest.DetNRSource):
+    ""
+    def __init__(self,*args, **kwargs):
         if ('detector' not in kwargs):
             kwargs['detector'] = 'lz'
         super().__init__(*args, **kwargs)

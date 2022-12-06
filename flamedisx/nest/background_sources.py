@@ -6,7 +6,8 @@ import tensorflow as tf
 import os
 import numpy as np
 import pandas as pd
-
+import pickle
+from multihist import Histdd
 import flamedisx as fd
 from . import lxe_sources as fd_nest
 
@@ -16,8 +17,33 @@ export, __all__ = fd.exporter()
 ##
 # Flamedisx sources
 ##
+def read_position_spectra(FilePath):
+    """Reads in energy spectrum from .pkl file, generated with LZ's LZLAMA+BACCARAT->BGSKimmer/Assmbler."""
+    #extract background position data
+    with open(FilePath,'rb') as handle:
+        data_dict=pickle.load(handle)
+    keys=data_dict.keys()
+    
+    i=data_dict['x[cm]']
+    j=data_dict['y[cm]']
+    weight=data_dict['weight']
 
-
+    k_key= list(keys)[2]
+    dt_ns=data_dict[k_key]
+    if k_key=='drift time[ns]':
+        z=(146.1 - dt_ns*0.00015334659984647314) 
+    elif k_key=='drift time[us]':
+        z=(146.1 - dt_ns*1000*0.00015334659984647314) 
+    elif k_key=='z[cm]':
+        z=dt_ns
+    else:
+        raise KeyError("Key error for coords: %s in LZdetNRSource: Require x/y/z[cm] for lenghts, theta[rad],  and drift time[ns] or [us] "%coord)
+    k=z
+    if 'energy_keV' and 'spectrum_value_norm' in keys:
+        value_energy=data_dict['energy_keV']
+        value_norm=data_dict['spectrum_value_norm']
+    
+    return [i,j,k,weight,value_energy,value_norm]
 @export
 class BetaSource(fd_nest.nestERSource):
     """Beta background source combining 214Pb, 212Pb and 85Kr.
@@ -171,3 +197,89 @@ class B8Source(fd_nest.nestNRSource):
         self.rates_vs_energy = tf.convert_to_tensor(df_8B['spectrum_value_norm'].values, dtype=fd.float_type())
 
         super().__init__(*args, **kwargs)
+
+
+        
+
+@export
+class SpatialNRSource(fd_nest.nestSpatialRateNRSource):
+    """Spatially dependent NR source
+    """
+    
+    def __init__(self,FilePath,nbins, *args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'default'
+        #create histogram
+        
+        [i,j,k,weight,value_energy,value_norm]=read_position_spectra(FilePath)
+        offset=1
+        if nbins==None:
+            nbins=int(np.sqrt(len(i))/5)
+        mh = Histdd(
+            bins=nbins,
+            range=[[min(i)-offset,max(i)+offset],[min(j)-offset,max(j)+offset],[min(k)-offset,max(k)+offset]],
+            axis_names=['x','y','z']
+            )
+        mh.add(i,j,k,weights=weight)
+        self.spatial_hist=mh
+        #add energy spectra
+        if not hasattr(self,'energies'):    
+            print( self.__class__.__name__+" Energy spectrum assigned from position file: "+str(FilePath))
+            self.energies = tf.convert_to_tensor(value_energy, dtype=fd.float_type())
+            self.rates_vs_energy = tf.convert_to_tensor(value_norm, dtype=fd.float_type())
+        super().__init__(*args, **kwargs)
+        
+@export
+class DetNRSource(SpatialNRSource):
+    "Derived from incorrect assembled file"
+    
+    def __init__(self,FilePath=os.path.join(os.path.dirname(__file__), '../lz/Det_NR_test_position_data.pkl'),nbins=30,*args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'lz'
+        super().__init__(FilePath, nbins,*args, **kwargs)
+
+        
+        
+@export
+class SpatialERSource(fd_nest.nestSpatialRateERSource):
+    """Spatially dependent ER source
+    """
+    
+    def __init__(self,FilePath,nbins, *args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'default'
+        #create histogram
+        [i,j,k,weight,value_energy,value_norm]=read_position_spectra(FilePath)
+        offset=1
+        if nbins==None:
+            nbins=int(np.sqrt(len(i))/5)
+        mh = Histdd(
+            bins=nbins,
+            range=[[min(i)-offset,max(i)+offset],[min(j)-offset,max(j)+offset],[min(k)-offset,max(k)+offset]],
+            axis_names=['x','y','z']
+            )
+        mh.add(i,j,k,weights=weight)
+        self.spatial_hist=mh
+        #add energy spectra
+        if not hasattr(self,'energies'):    
+            print( self.__class__.__name__+" Energy spectrum assigned from position file: "+str(FilePath))
+            self.energies = tf.convert_to_tensor(value_energy, dtype=fd.float_type())
+            self.rates_vs_energy = tf.convert_to_tensor(value_norm, dtype=fd.float_type())
+        
+        super().__init__(*args, **kwargs)
+
+@export
+class SpatialXe127Source(SpatialERSource):
+    """Spatially dependent Xe127 source Derived from correct skimmed/assembled files 
+    """
+    
+    def __init__(self,FilePath=os.path.join(os.path.dirname(__file__), '../lz/Xe127_test_position_data.pkl'),nbins=None,*args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'default'
+
+        df_127Xe = pd.read_pickle(os.path.join(os.path.dirname(__file__), 'background_spectra/127Xe_spectrum.pkl'))
+
+        self.energies = tf.convert_to_tensor(df_127Xe['energy_keV'].values, dtype=fd.float_type())
+        self.rates_vs_energy = tf.convert_to_tensor(df_127Xe['spectrum_value_norm'].values, dtype=fd.float_type())
+        super().__init__(FilePath, nbins,*args, **kwargs)
+        
