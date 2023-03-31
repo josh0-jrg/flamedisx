@@ -5,7 +5,7 @@ import os
 
 import flamedisx as fd
 from .. import nest as fd_nest
-
+import pickle
 import math as m
 pi = tf.constant(m.pi)
 
@@ -185,8 +185,35 @@ class nestSource(fd.BlockModelSource):
     def s2_spe_smearing(self, n_pe):
         return tf.sqrt(
             self.spe_res * self.spe_res * n_pe +
-            self.S2_noise * self.S2_noise * n_pe * n_pe)
+            self.S2_noise * self.S2_noise * n_pe * n_pe) 
+    #position data read-in
+    def read_position_spectra(self,FilePath):
+        """Reads in energy spectrum from .pkl file, e.g those generated with LZ's LZLAMA+BACCARAT->BGSKimmer/Assmbler."""
+        #extract background position data
+        print("Loading Data From: %s"%FilePath)
+        with open(FilePath,'rb') as handle:
+            data_dict=pickle.load(handle)
+        keys=data_dict.keys()
 
+        i=data_dict['x[cm]']
+        j=data_dict['y[cm]']
+        weight=data_dict['weight']
+
+        k_key= list(keys)[2]
+        dt_ns=data_dict[k_key]
+        if k_key=='drift time[ns]':
+            z=(self.z_topDrift - dt_ns*self.drift_velocity)
+        elif k_key=='drift time[us]':
+            z=(self.z_topDrift - dt_ns*1000*self.drift_velocity)
+        elif k_key=='z[cm]':
+            z=dt_ns
+        else:
+            raise KeyError("Key error for coords: %s in LZdetNRSource: Require x/y/z[cm] for lenghts, theta[rad],  and drift time[ns] or [us] "%coord)
+        k=z
+        if 'energy_keV' and 'spectrum_value_norm' in keys:
+            value_energy=data_dict['energy_keV']
+            value_norm=data_dict['spectrum_value_norm']
+        return [i,j,k,weight,value_energy,value_norm]
 
 @export
 class nestERSource(nestSource):

@@ -212,7 +212,6 @@ class MakePhotonsElectronsNR(fd.Block):
             nel = self.gimme_numpy('mean_yield_electron', d['energy'].values)
             nq = self.gimme_numpy('mean_yield_quanta', (d['energy'].values, nel))
             fano = self.gimme_numpy('fano_factor', nq)
-
             nq_actual_temp = np.round(stats.norm.rvs(nq, np.sqrt(fano*nq))).astype(int)
             # Don't let number of quanta go negative
             nq_actual = np.where(nq_actual_temp < 0,

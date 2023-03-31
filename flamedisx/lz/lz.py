@@ -9,7 +9,6 @@ import os
 import pandas as pd
 
 import flamedisx as fd
-
 export, __all__ = fd.exporter()
 
 
@@ -27,7 +26,6 @@ def interpolate_acceptance(arg, domain, acceptances):
     """
     return np.interp(x=arg, xp=domain, fp=acceptances)
 
-
 ##
 # Flamedisx sources
 ##
@@ -38,10 +36,10 @@ def interpolate_acceptance(arg, domain, acceptances):
 
 
 class LZSource:
-    path_s1_corr_LZAP = '/Users/Robert/s1_map_22Apr22.json'
-    path_s2_corr_LZAP = '/Users/Robert/s2_map_30Mar22.json'
-    path_s1_corr_latest = '/Users/Robert/s1_map_latest.json'
-    path_s2_corr_latest = '/Users/Robert/s2_map_latest.json'
+    path_s1_corr_LZAP = '/global/homes/j/joshrg/flamedisx/notebooks/maps_and_efficiencies/s1_map_22Apr22.json'
+    path_s2_corr_LZAP = '/global/homes/j/joshrg/flamedisx/notebooks/maps_and_efficiencies/s2_map_30Mar22.json'
+    path_s1_corr_latest = '/global/homes/j/joshrg/flamedisx/notebooks/maps_and_efficiencies/s1_map_latest.json'
+    path_s2_corr_latest = '/global/homes/j/joshrg/flamedisx/notebooks/maps_and_efficiencies/s2_map_latest.json'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -56,16 +54,14 @@ class LZSource:
                                  kwargs['detector'] + '.ini'))
 
         self.drift_velocity = self.drift_velocity * 0.96 / 0.95
-
         self.cS1_min = config.getfloat('NEST', 'cS1_min_config') * (1 + self.double_pe_fraction)  # phd to phe
         self.cS1_max = config.getfloat('NEST', 'cS1_max_config') * (1 + self.double_pe_fraction)  # phd to phe
         self.S2_min = config.getfloat('NEST', 'S2_min_config') * (1 + self.double_pe_fraction)  # phd to phe
         self.S2_max = config.getfloat('NEST', 'S2_max_config') * (1 + self.double_pe_fraction)  # phd to phe
-
         try:
             self.s1_map_LZAP = fd.InterpolatingMap(fd.get_resource(self.path_s1_corr_LZAP))
-            self.s2_map_LZAP = fd.InterpolatingMap(fd.get_resource(self.path_s2_corr_LZAP))
             self.s1_map_latest = fd.InterpolatingMap(fd.get_resource(self.path_s1_corr_latest))
+            self.s2_map_LZAP = fd.InterpolatingMap(fd.get_resource(self.path_s2_corr_LZAP))
             self.s2_map_latest = fd.InterpolatingMap(fd.get_resource(self.path_s2_corr_latest))
         except Exception:
             print("Could not load maps; setting position corrections to 1")
@@ -75,10 +71,8 @@ class LZSource:
             self.s2_map_latest = None
 
         try:
-            df_S1_acc = pd.read_pickle(os.path.join(os.path.dirname(__file__),
-                                       'acceptance_curves/cS1_acceptance_curve.pkl'))
-            df_S2_acc = pd.read_pickle(os.path.join(os.path.dirname(__file__),
-                                       'acceptance_curves/cS2_acceptance_curve.pkl'))
+            df_S1_acc = pd.read_pickle('/global/homes/j/joshrg/flamedisx/notebooks/maps_and_efficiencies/cS1_acceptance_curve.pkl')
+            df_S2_acc = pd.read_pickle('/global/homes/j/joshrg/flamedisx/notebooks/maps_and_efficiencies/cS2_acceptance_curve.pkl')
 
             self.cs1_acc_domain = df_S1_acc['cS1_phd'].values * (1 + self.double_pe_fraction)  # phd to phe
             self.cs1_acc_curve = df_S1_acc['cS1_acceptance'].values
@@ -315,6 +309,13 @@ class LZB8Source(LZSource, fd.nest.B8Source):
         super().__init__(*args, **kwargs)
 @export
 class LZDetNRSource(LZSource, fd.nest.DetNRSource):
+    ""
+    def __init__(self,*args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'lz'
+        super().__init__(*args, **kwargs)
+@export
+class LZSpatialFlatERSource(LZSource, fd.nest.SpatialFlatERSource):
     ""
     def __init__(self,*args, **kwargs):
         if ('detector' not in kwargs):

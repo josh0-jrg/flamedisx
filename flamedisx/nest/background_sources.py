@@ -17,33 +17,6 @@ export, __all__ = fd.exporter()
 ##
 # Flamedisx sources
 ##
-def read_position_spectra(FilePath):
-    """Reads in energy spectrum from .pkl file, generated with LZ's LZLAMA+BACCARAT->BGSKimmer/Assmbler."""
-    #extract background position data
-    with open(FilePath,'rb') as handle:
-        data_dict=pickle.load(handle)
-    keys=data_dict.keys()
-    
-    i=data_dict['x[cm]']
-    j=data_dict['y[cm]']
-    weight=data_dict['weight']
-
-    k_key= list(keys)[2]
-    dt_ns=data_dict[k_key]
-    if k_key=='drift time[ns]':
-        z=(146.1 - dt_ns*0.00015334659984647314) 
-    elif k_key=='drift time[us]':
-        z=(146.1 - dt_ns*1000*0.00015334659984647314) 
-    elif k_key=='z[cm]':
-        z=dt_ns
-    else:
-        raise KeyError("Key error for coords: %s in LZdetNRSource: Require x/y/z[cm] for lenghts, theta[rad],  and drift time[ns] or [us] "%coord)
-    k=z
-    if 'energy_keV' and 'spectrum_value_norm' in keys:
-        value_energy=data_dict['energy_keV']
-        value_norm=data_dict['spectrum_value_norm']
-    
-    return [i,j,k,weight,value_energy,value_norm]
 @export
 class BetaSource(fd_nest.nestERSource):
     """Beta background source combining 214Pb, 212Pb and 85Kr.
@@ -211,13 +184,13 @@ class SpatialNRSource(fd_nest.nestSpatialRateNRSource):
             kwargs['detector'] = 'default'
         #create histogram
         
-        [i,j,k,weight,value_energy,value_norm]=read_position_spectra(FilePath)
+        [i,j,k,weight,value_energy,value_norm]=self.read_position_spectra(FilePath)
         offset=1
         if nbins==None:
             nbins=int(np.sqrt(len(i))/5)
         mh = Histdd(
             bins=nbins,
-            range=[[min(i)-offset,max(i)+offset],[min(j)-offset,max(j)+offset],[min(k)-offset,max(k)+offset]],
+            range=[[min(i),max(i)],[min(j),max(j)],[min(k),max(k)]],
             axis_names=['x','y','z']
             )
         mh.add(i,j,k,weights=weight)
@@ -249,13 +222,13 @@ class SpatialERSource(fd_nest.nestSpatialRateERSource):
         if ('detector' not in kwargs):
             kwargs['detector'] = 'default'
         #create histogram
-        [i,j,k,weight,value_energy,value_norm]=read_position_spectra(FilePath)
+        [i,j,k,weight,value_energy,value_norm]=self.read_position_spectra(FilePath)
         offset=1
         if nbins==None:
             nbins=int(np.sqrt(len(i))/5)
         mh = Histdd(
             bins=nbins,
-            range=[[min(i)-offset,max(i)+offset],[min(j)-offset,max(j)+offset],[min(k)-offset,max(k)+offset]],
+            range=[[min(i),max(i)],[min(j),max(j)],[min(k),max(k)]],
             axis_names=['x','y','z']
             )
         mh.add(i,j,k,weights=weight)
@@ -282,4 +255,15 @@ class SpatialXe127Source(SpatialERSource):
         self.energies = tf.convert_to_tensor(df_127Xe['energy_keV'].values, dtype=fd.float_type())
         self.rates_vs_energy = tf.convert_to_tensor(df_127Xe['spectrum_value_norm'].values, dtype=fd.float_type())
         super().__init__(FilePath, nbins,*args, **kwargs)
-        
+
+@export
+class SpatialFlatERSource(SpatialERSource):
+    """Spatially dependent Flat ER source Derived from correct skimmed/assembled files"""
+    def __init__(self,FilePath= '/global/cfs/cdirs/lz/users/joshrg/PLR_work/flamenest/final_maps_JRG_feb8/Det_ER_sr1_Espectra_no_ROI_positions_position_energy_data.pkl',nbins=None,*args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'default'
+        self.energies =tf.convert_to_tensor(np.arange(0.05,20.5,0.05), dtype=fd.float_type())
+        self.rates_vs_energy = tf.convert_to_tensor(np.full(len(self.energies),1/len(self.energies)), dtype=fd.float_type())
+        if np.sum(self.energies>0) != len(self.energies):
+            print("WARNING: spectra of the source SpatialFlatERSource has zero elements, can cause nan quanta")
+        super().__init__(FilePath, nbins,*args, **kwargs)
