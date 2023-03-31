@@ -314,6 +314,7 @@ class LZDetNRSource(LZSource, fd.nest.DetNRSource):
         if ('detector' not in kwargs):
             kwargs['detector'] = 'lz'
         super().__init__(*args, **kwargs)
+
 @export
 class LZSpatialFlatERSource(LZSource, fd.nest.SpatialFlatERSource):
     ""

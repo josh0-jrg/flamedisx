@@ -17,6 +17,7 @@ export, __all__ = fd.exporter()
 ##
 # Flamedisx sources
 ##
+
 @export
 class BetaSource(fd_nest.nestERSource):
     """Beta background source combining 214Pb, 212Pb and 85Kr.
@@ -183,8 +184,8 @@ class SpatialNRSource(fd_nest.nestSpatialRateNRSource):
         if ('detector' not in kwargs):
             kwargs['detector'] = 'default'
         #create histogram
-        
         [i,j,k,weight,value_energy,value_norm]=self.read_position_spectra(FilePath)
+
         offset=1
         if nbins==None:
             nbins=int(np.sqrt(len(i))/5)
@@ -223,6 +224,7 @@ class SpatialERSource(fd_nest.nestSpatialRateERSource):
             kwargs['detector'] = 'default'
         #create histogram
         [i,j,k,weight,value_energy,value_norm]=self.read_position_spectra(FilePath)
+
         offset=1
         if nbins==None:
             nbins=int(np.sqrt(len(i))/5)
@@ -255,6 +257,7 @@ class SpatialXe127Source(SpatialERSource):
         self.energies = tf.convert_to_tensor(df_127Xe['energy_keV'].values, dtype=fd.float_type())
         self.rates_vs_energy = tf.convert_to_tensor(df_127Xe['spectrum_value_norm'].values, dtype=fd.float_type())
         super().__init__(FilePath, nbins,*args, **kwargs)
+
 
 @export
 class SpatialFlatERSource(SpatialERSource):
