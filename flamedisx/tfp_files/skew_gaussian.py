@@ -138,7 +138,7 @@ class SkewGaussian(distribution.Distribution):
   def _log_prob(self, x):
     scale = tf.convert_to_tensor(self.scale)
     skewness = tf.convert_to_tensor(self.skewness)
-    log_value = 1 + tf.math.erf(skewness/(np.sqrt(2)*scale) * (x - self.loc))
+    log_value = 1 + tf.math.erf(skewness/(tf.constant(np.sqrt(2), dtype=self.dtype)*scale) * (x - self.loc))
     log_value = tf.where(log_value <= 0, 1e-10, log_value)
     log_unnormalized = -0.5 * tf.math.squared_difference(
         x / scale, self.loc / scale) + tf.math.log(log_value)
@@ -158,7 +158,7 @@ class SkewGaussian(distribution.Distribution):
         val += ci * tf.math.pow(a,2*tf.cast(i,'float32')+1) / (2*tf.cast(i,'float32')+1)
         ci = -ci + tf.math.pow(hs,tf.cast(i+1,'float32')) / tf.exp(tf.math.lgamma(tf.cast(i+2,'float32'))) * exp_hs
 
-    val = val / (2 * np.pi)
+    val = val / tf.constant((2 * np.pi),dtype=tf.float32)
 
     return val
 
@@ -170,8 +170,8 @@ class SkewGaussian(distribution.Distribution):
     a = tf.cast(skewness,'float32')
 
     owens_t_eval = 0.5 * normal.Normal(loc=0.,scale=1.).cdf(h) + 0.5 * normal.Normal(loc=0.,scale=1.).cdf(a*h) - normal.Normal(loc=0.,scale=1.).cdf(h) * normal.Normal(loc=0.,scale=1.).cdf(a*h)
-
-    return 0.5 * (1. + tf.math.erf(1./(np.sqrt(2.)*scale) * (x - self.loc))) - \
+    
+    return 0.5 * (1. + tf.math.erf(1./(tf.constant(np.sqrt(2), dtype=self.dtype)*scale) * (x - self.loc))) - \
     tf.cast(tf.where(a > tf.ones_like(a), 2. * (owens_t_eval - self.owensT1(a*h,1./a,self.owens_t_terms)), 2. * self.owensT1(h,a,self.owens_t_terms)),'float32')
 
   def _parameter_control_dependencies(self, is_init):
