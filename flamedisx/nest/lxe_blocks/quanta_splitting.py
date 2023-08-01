@@ -189,7 +189,12 @@ class MakePhotonsElectronsNR(fd.Block):
 
         nq = electrons_produced + photons_produced
         #Reduce dimensionality form n_elxn_ph->n_q
-        unique_quanta,index=tf.unique(tf.reshape(nq[:,:,:,0],[-1]))
+        # Replaces unique_quanta,index=tf.unique(tf.reshape(nq[:,:,:,0],[-1])) with some redundant nq
+        flat_nq=tf.reshape(nq[:,:,:,0],[-1])
+        unique_quanta=tf.range(tf.reduce_min(flat_nq),tf.reduce_max(flat_nq)+tf.constant(1,dtype=tf.float32))
+        OG_2D=tf.repeat(flat_nq[:,o],tf.shape(unique_quanta),axis=1)
+        range_2D=tf.repeat(unique_quanta[o,:],tf.shape(flat_nq),axis=0)
+        index=tf.where(tf.equal(OG_2D,range_2D))[:,1]
         #restore dimnensionality of index
         index_3D=tf.reshape(index,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])#restore event dimension
         index_4D=tf.repeat(index_3D[:,:,:,o],tf.shape(nq)[3],axis=3)
