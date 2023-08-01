@@ -107,11 +107,11 @@ class MakePhotonsElectronsNR(fd.Block):
                 nex_fano = yield_fano[1]
 
                 if approx:
-                    p_ni_1D = tfp.distributions.Normal(loc=nq_mean*alpha,
+                    p_ni = tfp.distributions.Normal(loc=nq_mean*alpha,
                                                     scale=tf.sqrt(nq_mean*alpha*ni_fano) + 1e-10).prob(_ions_produced_1D)
-                    p_ni = tf.repeat(p_ni_1D[:, o], tf.shape(ions_produced)[1], axis=1)
-                    p_ni = tf.repeat(p_ni_1D[:, :, o], tf.shape(ions_produced)[2], axis=2)
-                    p_ni = tf.repeat(p_ni_1D[:, :, :, o], tf.shape(ions_produced)[3], axis=3)
+                    p_ni = tf.repeat(p_ni[o,:], tf.shape(ions_produced)[2], axis=0)
+                    p_ni = tf.repeat(p_ni[o,:, :], tf.shape(ions_produced)[1], axis=0)
+                    p_ni = tf.repeat(p_ni[o,:, :, :], tf.shape(ions_produced)[0], axis=0)
 
                     nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
                     ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
@@ -122,11 +122,11 @@ class MakePhotonsElectronsNR(fd.Block):
                 else:
                     normal_dist_ni = tfp.distributions.Normal(loc=nq_mean*alpha,
                                                               scale=tf.sqrt(nq_mean*alpha*ni_fano) + 1e-10)
-                    p_ni_1D = normal_dist_ni.cdf(_ions_produced_1D + 0.5) - \
+                    p_ni = normal_dist_ni.cdf(_ions_produced_1D + 0.5) - \
                         normal_dist_ni.cdf(_ions_produced_1D - 0.5)
-                    p_ni = tf.repeat(p_ni_1D[:, o], tf.shape(ions_produced)[1], axis=1)
-                    p_ni = tf.repeat(p_ni_1D[:, :, o], tf.shape(ions_produced)[2], axis=2)
-                    p_ni = tf.repeat(p_ni_1D[:, :, :, o], tf.shape(ions_produced)[3], axis=3)
+                    p_ni = tf.repeat(p_ni[o,:], tf.shape(ions_produced)[2], axis=0)
+                    p_ni = tf.repeat(p_ni[o,:, :], tf.shape(ions_produced)[1], axis=0)
+                    p_ni = tf.repeat(p_ni[o,:, :, :], tf.shape(ions_produced)[0], axis=0)
 
                     nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
                     ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
