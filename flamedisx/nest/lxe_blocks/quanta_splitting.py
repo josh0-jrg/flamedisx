@@ -76,12 +76,12 @@ class MakePhotonsElectronsNR(fd.Block):
                 if approx:
                     p_nq_1D = tfp.distributions.Normal(loc=nq_mean,
                                                     scale=tf.sqrt(nq_mean * fano) + 1e-10).prob(unique_quanta)
-                    p_nq=tf.gather(p_nq_1D,index_4D)
+                    p_nq=tf.gather(p_nq_1D,index_4D_nq)
                 else:
                     normal_dist_nq = tfp.distributions.Normal(loc=nq_mean,
                                                               scale=tf.sqrt(nq_mean * fano) + 1e-10) 
                     p_nq_1D=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
-                    p_nq=tf.gather(p_nq_1D,index_4D)
+                    p_nq=tf.gather(p_nq_1D,index_4D_nq)
 
                 ex_ratio = self.gimme('exciton_ratio', data_tensor=data_tensor, ptensor=ptensor,
                                       bonus_arg=energy)
@@ -91,7 +91,7 @@ class MakePhotonsElectronsNR(fd.Block):
                 nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
                 ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
                 p_ni_2D=tfp.distributions.Binomial(total_count=nq_2D, probs=alpha).prob(ni_2D)
-                p_ni=tf.gather(p_ni_2D,index_3D)
+                p_ni=tf.gather(p_ni_2D,index_3D_nq)
 
             else:
                 yields = self.gimme('mean_yields', data_tensor=data_tensor, ptensor=ptensor,
@@ -118,7 +118,7 @@ class MakePhotonsElectronsNR(fd.Block):
                     p_nq_2D = tfp.distributions.Normal(loc=nq_mean*alpha*ex_ratio,
                                                     scale=tf.sqrt(nq_mean*alpha*ex_ratio*nex_fano) + 1e-10).prob(
                                                         nq_2D - ni_2D)
-                    p_nq=tf.gather(p_nq_2D,index_3D)
+                    p_nq=tf.gather(p_nq_2D,index_3D_nq)
                 else:
                     normal_dist_ni = tfp.distributions.Normal(loc=nq_mean*alpha,
                                                               scale=tf.sqrt(nq_mean*alpha*ni_fano) + 1e-10)
@@ -134,20 +134,23 @@ class MakePhotonsElectronsNR(fd.Block):
                                                               scale=tf.sqrt(nq_mean*alpha*ex_ratio*nex_fano) + 1e-10)
                     p_nq_2D = normal_dist_nq.cdf(nq_2D - ni_2D + 0.5) \
                         - normal_dist_nq.cdf(nq_2D - ni_2D - 0.5)
-                    p_nq=tf.gather(p_nq_2D,index_3D)
+                    p_nq=tf.gather(p_nq_2D,index_3D_nq)
 
+
+            nel_2D=tf.repeat(unique_nel[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
+            ni_nel_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_nel)[0],axis=0)
             recomb_p = self.gimme('recomb_prob', data_tensor=data_tensor, ptensor=ptensor,
                                   bonus_arg=(nel_mean, nq_mean, ex_ratio))
             skew = self.gimme('skewness', data_tensor=data_tensor, ptensor=ptensor,
                               bonus_arg=nq_mean)
             var = self.gimme('variance', data_tensor=data_tensor, ptensor=ptensor,
-                             bonus_arg=(nel_mean, nq_mean, recomb_p, _ions_produced))
+                             bonus_arg=(nel_mean, nq_mean, recomb_p, ni_nel_2D))
             width_corr = self.gimme('width_correction', data_tensor=data_tensor, ptensor=ptensor,
                                     bonus_arg=skew)
             mu_corr = self.gimme('mu_correction', data_tensor=data_tensor, ptensor=ptensor,
                                  bonus_arg=(skew, var, width_corr))
 
-            mean = (tf.ones_like(_ions_produced, dtype=fd.float_type()) - recomb_p) * _ions_produced - mu_corr
+            mean = (tf.ones_like(ni_nel_2D, dtype=fd.float_type()) - recomb_p) * ni_nel_2D - mu_corr
             std_dev = tf.sqrt(var) / width_corr
 
             if self.is_ER:
@@ -156,16 +159,15 @@ class MakePhotonsElectronsNR(fd.Block):
                 owens_t_terms = 5
 
             if approx:
-                p_nel = fd.tfp_files.SkewGaussian(loc=mean[:,:,0,:], scale=std_dev[:,:,0,:],
+                p_nel = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
                                                   skewness=skew,
-                                                  owens_t_terms=owens_t_terms).prob(electrons_produced[:,:,0,:])
+                                                  owens_t_terms=owens_t_terms).prob(nel_2D)
             else:
-                p_nel =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean[:,:,0,:], scale=std_dev[:,:,0,:],
+                p_nel =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
                                                                         skewness=skew,
-                                                                        limit=_ions_produced[:,:,0,:],
-                                                                        owens_t_terms=owens_t_terms).prob(electrons_produced[:,:,0,:])
-            p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(electrons_produced)[2],axis=2)
-            
+                                                                        limit=ni_nel_2D,
+                                                                        owens_t_terms=owens_t_terms).prob(nel_2D)
+            p_nel=tf.gather(p_nel,index_3D_nel) #this gave me weird errors locally but they stopped?
 
             p_mult = p_nq * p_ni * p_nel
 
@@ -190,16 +192,27 @@ class MakePhotonsElectronsNR(fd.Block):
             return compute_single_energy(args, approx=True)
 
         nq = electrons_produced + photons_produced
-        #Reduce dimensionality form n_elxn_ph->n_q
+        #Reduce dimensionality from n_elxn_ph to n_q
         # Replaces unique_quanta,index=tf.unique(tf.reshape(nq[:,:,:,0],[-1])) with some redundant nq
         flat_nq=tf.reshape(nq[:,:,:,0],[-1])
         unique_quanta=tf.range(tf.reduce_min(flat_nq),tf.reduce_max(flat_nq)+tf.constant(1,dtype=tf.float32))
         OG_2D=tf.repeat(flat_nq[:,o],tf.shape(unique_quanta),axis=1)
         range_2D=tf.repeat(unique_quanta[o,:],tf.shape(flat_nq),axis=0)
-        index=tf.where(tf.equal(OG_2D,range_2D))[:,1]
+        index_nq=tf.where(tf.equal(OG_2D,range_2D))[:,1]
         #restore dimnensionality of index
-        index_3D=tf.reshape(index,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])#restore event dimension
-        index_4D=tf.repeat(index_3D[:,:,:,o],tf.shape(nq)[3],axis=3)
+        index_3D_nq=tf.reshape(index_nq,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])#restore event dimension
+        index_4D_nq=tf.repeat(index_3D_nq[:,:,:,o],tf.shape(nq)[3],axis=3)
+        #===Need to wrap into a function work in progress!====
+
+        #We can do the same for nelectrons to reduce calls!
+        flat_nel=tf.reshape(electrons_produced[:,:,0,0],[-1])
+        unique_nel=tf.range(tf.reduce_min(flat_nel),tf.reduce_max(flat_nel)+tf.constant(1,dtype=tf.float32))
+        OG_2D=tf.repeat(flat_nel[:,o],tf.shape(unique_nel),axis=1)
+        range_2D=tf.repeat(unique_nel[o,:],tf.shape(flat_nel),axis=0)
+        index_nel=tf.where(tf.equal(OG_2D,range_2D))[:,1]
+        #restore dimnensionality of index
+        index_2D_nel=tf.reshape(index_nel,[tf.shape(nq)[0],tf.shape(nq)[1]])#restore event dimension
+        index_3D_nel=tf.repeat(index_2D_nel[:,:,o],tf.shape(nq)[2],axis=2)
 
         ions_min_initial = self.source._fetch('ions_produced_min', data_tensor=data_tensor)[:, 0, o]
         ions_min_initial = tf.repeat(ions_min_initial, tf.shape(ions_produced)[1], axis=1)
