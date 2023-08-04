@@ -74,13 +74,13 @@ class MakePhotonsElectronsNR(fd.Block):
                                   bonus_arg=nq_mean)
 
                 if approx:
-                    p_nq = tfp.distributions.Normal(loc=nq_mean,
+                    p_nq_1D = tfp.distributions.Normal(loc=nq_mean,
                                                     scale=tf.sqrt(nq_mean * fano) + 1e-10).prob(unique_quanta)
                 else:
                     normal_dist_nq = tfp.distributions.Normal(loc=nq_mean,
                                                               scale=tf.sqrt(nq_mean * fano) + 1e-10) 
-                    p_nq=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
-                p_nq=tf.repeat(p_nq[o,:],tf.shape(index_nq)[0],axis=0)
+                    p_nq_1D=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
+                p_nq=tf.repeat(p_nq_1D[o,:],tf.shape(index_nq)[0],axis=0)
                 p_nq=tf.gather_nd(params=p_nq,indices=index_nq[:,o],batch_dims=1)
                 p_nq=tf.reshape(p_nq,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])#restore event dimension
                 p_nq=tf.repeat(p_nq[:,:,:,o],tf.shape(nq)[3],axis=3)
@@ -92,8 +92,8 @@ class MakePhotonsElectronsNR(fd.Block):
                 # need to be a 2D distribution with a 2D input of nqxn_i so we can index nq
                 nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
                 ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
-                p_ni=tfp.distributions.Binomial(total_count=nq_2D, probs=alpha).prob(ni_2D)
-                p_ni=tf.repeat(p_ni[o,:,:],tf.shape(index_nq)[0],axis=0)
+                p_ni_2D=tfp.distributions.Binomial(total_count=nq_2D, probs=alpha).prob(ni_2D)
+                p_ni=tf.repeat(p_ni_2D[o,:,:],tf.shape(index_nq)[0],axis=0)
                 p_ni=tf.gather_nd(params=p_ni,indices=index_nq[:,o],batch_dims=1)
                 p_ni=tf.reshape(tf.reshape(p_ni,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
 
@@ -112,33 +112,34 @@ class MakePhotonsElectronsNR(fd.Block):
                 nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
                 ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
                 if approx:
-                    p_ni = tfp.distributions.Normal(loc=nq_mean*alpha,
+                    p_ni_1D = tfp.distributions.Normal(loc=nq_mean*alpha,
                                                     scale=tf.sqrt(nq_mean*alpha*ni_fano) + 1e-10).prob(_ions_produced_1D)
 
-                    p_nq = tfp.distributions.Normal(loc=nq_mean*alpha*ex_ratio,
+                    p_nq_2D = tfp.distributions.Normal(loc=nq_mean*alpha*ex_ratio,
                                                     scale=tf.sqrt(nq_mean*alpha*ex_ratio*nex_fano) + 1e-10).prob(
                                                         nq_2D - ni_2D)
                 else:
                     normal_dist_ni = tfp.distributions.Normal(loc=nq_mean*alpha,
                                                               scale=tf.sqrt(nq_mean*alpha*ni_fano) + 1e-10)
-                    p_ni = normal_dist_ni.cdf(_ions_produced_1D + 0.5) - \
+                    p_ni_1D = normal_dist_ni.cdf(_ions_produced_1D + 0.5) - \
                         normal_dist_ni.cdf(_ions_produced_1D - 0.5)
 
                     normal_dist_nq = tfp.distributions.Normal(loc=nq_mean*alpha*ex_ratio,
                                                               scale=tf.sqrt(nq_mean*alpha*ex_ratio*nex_fano) + 1e-10)
-                    p_nq = normal_dist_nq.cdf(nq_2D - ni_2D + 0.5) \
+                    p_nq_2D = normal_dist_nq.cdf(nq_2D - ni_2D + 0.5) \
                         - normal_dist_nq.cdf(nq_2D - ni_2D - 0.5)
 
-                p_ni = tf.repeat(p_ni[o,:], tf.shape(ions_produced)[2], axis=0)
+                p_ni = tf.repeat(p_ni_1D[o,:], tf.shape(ions_produced)[2], axis=0)
                 p_ni = tf.repeat(p_ni[o,:, :], tf.shape(ions_produced)[1], axis=0)
                 p_ni = tf.repeat(p_ni[o,:, :, :], tf.shape(ions_produced)[0], axis=0)
-                p_nq=tf.repeat(p_nq[o,:,:],tf.shape(index_nq)[0],axis=0)
+                p_nq=tf.repeat(p_nq_2D[o,:,:],tf.shape(index_nq)[0],axis=0)
                 p_nq=tf.gather_nd(params=p_nq,indices=index_nq[:,o],batch_dims=1)
                 p_nq=tf.reshape(tf.reshape(p_nq,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
 
 
             nel_2D=tf.repeat(unique_nel[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
             ni_nel_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_nel)[0],axis=0)
+
             recomb_p = self.gimme('recomb_prob', data_tensor=data_tensor, ptensor=ptensor,
                                   bonus_arg=(nel_mean, nq_mean, ex_ratio))
             skew = self.gimme('skewness', data_tensor=data_tensor, ptensor=ptensor,
@@ -159,15 +160,15 @@ class MakePhotonsElectronsNR(fd.Block):
                 owens_t_terms = 5
 
             if approx:
-                p_nel = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
+                p_nel_1D = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
                                                   skewness=skew,
                                                   owens_t_terms=owens_t_terms).prob(nel_2D)
             else:
-                p_nel =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
+                p_nel_1D =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
                                                                         skewness=skew,
                                                                         limit=ni_nel_2D,
                                                                         owens_t_terms=owens_t_terms).prob(nel_2D)
-            p_nel=tf.repeat(p_nel[o,:,:],tf.shape(index_nel)[0],axis=0)
+            p_nel=tf.repeat(p_nel_1D[o,:,:],tf.shape(index_nel)[0],axis=0)
             p_nel=tf.gather_nd(params=p_nel,indices=index_nel[:,o],batch_dims=1)
             p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
