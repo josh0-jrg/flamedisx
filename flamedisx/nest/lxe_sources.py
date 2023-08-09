@@ -104,12 +104,12 @@ class nestSource(fd.BlockModelSource):
     # quanta_splitting.py
 
     @staticmethod
-    def recomb_prob(*args):
+    def recomb_prob(*args,adjust_recombination=1):
         nel_mean = args[0]
         nq_mean = args[1]
         ex_ratio = args[2]
 
-        elec_frac = nel_mean / nq_mean
+        elec_frac = adjust_recombination*nel_mean / nq_mean
         recomb_p = 1. - (ex_ratio + 1.) * elec_frac
 
         return tf.where(tf.logical_or(nq_mean == 0, recomb_p < 0),
@@ -117,8 +117,8 @@ class nestSource(fd.BlockModelSource):
                         recomb_p)
 
     @staticmethod
-    def width_correction(skew,adjust_width=1):
-        return adjust_width*tf.sqrt(1. - (2. / pi) * skew * skew / (1. + skew * skew))
+    def width_correction(skew):
+        return tf.sqrt(1. - (2. / pi) * skew * skew / (1. + skew * skew))
 
     @staticmethod
     def mu_correction(*args):
