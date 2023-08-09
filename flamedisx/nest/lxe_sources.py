@@ -104,12 +104,11 @@ class nestSource(fd.BlockModelSource):
     # quanta_splitting.py
 
     @staticmethod
-    def recomb_prob(*args,adjust_recombination=1):
+    def recomb_prob(*args):
         nel_mean = args[0]
         nq_mean = args[1]
         ex_ratio = args[2]
-
-        elec_frac = adjust_recombination*nel_mean / nq_mean
+        elec_frac = nel_mean / nq_mean
         recomb_p = 1. - (ex_ratio + 1.) * elec_frac
 
         return tf.where(tf.logical_or(nq_mean == 0, recomb_p < 0),
@@ -141,8 +140,8 @@ class nestSource(fd.BlockModelSource):
 
     # secondary_quanta_generation.py
 
-    def electron_gain_mean(self, z):
-        elYield = (
+    def electron_gain_mean(self, z,*,adjust_eyield=1.0):
+        elYield = adjust_eyield*(
             0.137 * self.gas_field * 1e3 -
             4.70e-18 * (N_AVAGADRO * self.density_gas / A_XENON)) \
             * self.gas_gap * 0.1
