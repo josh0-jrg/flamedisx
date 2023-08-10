@@ -116,8 +116,8 @@ class nestSource(fd.BlockModelSource):
                         recomb_p)
 
     @staticmethod
-    def width_correction(skew):
-        return tf.sqrt(1. - (2. / pi) * skew * skew / (1. + skew * skew))
+    def width_correction(skew,adjust_width=1.0):
+        return adjust_width*tf.sqrt(1. - (2. / pi) * skew * skew / (1. + skew * skew))
 
     @staticmethod
     def mu_correction(*args):
