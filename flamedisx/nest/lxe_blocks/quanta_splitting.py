@@ -8,7 +8,7 @@ import operator
 import flamedisx as fd
 export, __all__ = fd.exporter()
 o = tf.newaxis
-
+minus_inf = tf.constant(-np.inf,dtype=tf.float32)
 
 @export
 class MakePhotonsElectronsNR(fd.Block):
@@ -155,16 +155,32 @@ class MakePhotonsElectronsNR(fd.Block):
                 owens_t_terms = 5
             else:
                 owens_t_terms = 5
-
-            if approx:
-                p_nel_1D = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
+            SkewGaussian = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
                                                   skewness=skew,
-                                                  owens_t_terms=owens_t_terms).prob(nel_2D)
+                                                  owens_t_terms=owens_t_terms)
+            if approx:
+                p_nel_1D=SkewGaussian.prob(nel_2D)
             else:
-                p_nel_1D =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
-                                                                        skewness=skew,
-                                                                        limit=ni_nel_2D,
-                                                                        owens_t_terms=owens_t_terms).prob(nel_2D)
+                #This is disgusting and I hate myself
+                cdf_upper = SkewGaussian.cdf(nel_2D+0.5)
+                cdf_lower = SkewGaussian.cdf(nel_2D-0.5)
+                @tf.custom_gradient
+                def stable_process(cdf_upper,cdf_lower):
+                    bounded_log_prob = tf.math.log(cdf_upper - cdf_lower)
+
+                    bounded_log_prob = tf.where((nel_2D > ni_nel_2D),
+                                                minus_inf,
+                                                bounded_log_prob)
+                    bounded_log_prob = tf.where(tf.math.is_nan(bounded_log_prob),
+                                                minus_inf,
+                                                bounded_log_prob)
+                    dumping_log_prob = tf.where((nel_2D == ni_nel_2D),
+                                                tf.math.log(1 - cdf_lower),
+                                                bounded_log_prob)
+                    def grad(upstream):
+                        return upstream,-upstream
+                    return tf.exp(dumping_log_prob),grad
+                p_nel_1D=stable_process(cdf_upper,cdf_lower)
             p_nel=tf.gather_nd(params=p_nel_1D,indices=index_nel[:,o],batch_dims=0)
             p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
