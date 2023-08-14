@@ -155,7 +155,7 @@ class TruncatedSkewGaussianCC(distribution.Distribution):
                                 bounded_log_prob)
     
     dumping_log_prob = tf.where((x == limit),
-                                tf.math.log(1 - cdf_lower),
+                                tf.math.log(1 - cdf_lower+1e-11),
                                 bounded_log_prob)
     
     return dumping_log_prob

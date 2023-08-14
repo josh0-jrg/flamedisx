@@ -31,7 +31,6 @@ class nestSource(fd.BlockModelSource):
 
         config = configparser.ConfigParser(inline_comment_prefixes=';')
         config.read(os.path.join(os.path.dirname(__file__), 'config/', detector + '.ini'))
-
         # common (known) parameters
         self.temperature = config.getfloat('NEST', 'temperature_config')
         self.pressure = config.getfloat('NEST', 'pressure_config')
@@ -116,8 +115,8 @@ class nestSource(fd.BlockModelSource):
                         recomb_p)
 
     @staticmethod
-    def width_correction(skew,adjust_width=1.0):
-        return adjust_width*tf.sqrt(1. - (2. / pi) * skew * skew / (1. + skew * skew))
+    def width_correction(skew):
+        return tf.sqrt(1. - (2. / pi) * skew * skew / (1. + skew * skew))
 
     @staticmethod
     def mu_correction(*args):
@@ -305,7 +304,7 @@ class nestERSource(nestSource):
         skewness_masked = tf.multiply(skewness, tf.cast(mask_product, fd.float_type()))
 
         if self.detector == 'lz':
-            skewness_masked = tf.zeros_like(nq_mean, dtype=fd.float_type())
+            skewness_masked = tf.zeros_like(nq_mean, dtype=fd.float_type())+1e-4 #intermediate fix for skew gaussian
 
         return skewness_masked
 
