@@ -154,16 +154,26 @@ class MakePhotonsElectronsNR(fd.Block):
                 owens_t_terms = 5
             else:
                 owens_t_terms = 5
-
-            if approx:
-                p_nel_1D = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
-                                                  skewness=skew,
-                                                  owens_t_terms=owens_t_terms).prob(nel_2D)
+            if self.skew:
+                if approx:
+                    p_nel_1D = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
+                                                    skewness=skew,
+                                                    owens_t_terms=owens_t_terms).prob(nel_2D)
+                else:
+                    p_nel_1D =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
+                                                                            skewness=skew,
+                                                                            limit=ni_nel_2D,
+                                                                            owens_t_terms=owens_t_terms).prob(nel_2D)
             else:
-                p_nel_1D =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
-                                                                        skewness=skew,
-                                                                        limit=ni_nel_2D,
-                                                                        owens_t_terms=owens_t_terms).prob(nel_2D)
+                normal_dist_nel=tfp.distributions.Normal(loc=mean, scale=std_dev)
+                if approx:
+                    p_nel_1D=normal_dist_nel.prob(nel_2D)
+                else:
+                    #Conitunity correction and truncation!
+                    p_nel_1D=normal_dist_nel.cdf(nel_2D+0.5)-normal_dist_nel.cdf(nel_2D-0.5)
+                    p_nel_1D=tf.where(nel_2D>ni_nel_2D,0.,p_nel_1D)
+                    p_nel_1D=tf.where(nel_2D==ni_nel_2D,0.,1-normal_dist_nel.cdf(nel_2D-0.5))
+            
             p_nel=tf.gather_nd(params=p_nel_1D,indices=index_nel[:,o],batch_dims=0)
             p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
