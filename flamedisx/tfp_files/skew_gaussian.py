@@ -24,7 +24,14 @@ from tensorflow_probability.python.internal import tensor_util
 import flamedisx as fd
 
 export, __all__ = fd.exporter()
-
+@tf.custom_gradient
+def clip_grads(var):
+  """
+    takes in a single variable and clips the gradients to zero when it is zero or negative.
+  """
+  def grad(upstream):
+    return tf.where(var<=0,0.,upstream)
+  return var,grad
 
 @export
 class SkewGaussian(distribution.Distribution):
@@ -168,7 +175,7 @@ class SkewGaussian(distribution.Distribution):
 
     h = tf.cast((x - self.loc)/scale,'float32')
     a = tf.cast(skewness,'float32')
-
+    a=clip_grads(a)
     owens_t_eval = 0.5 * normal.Normal(loc=0.,scale=1.).cdf(h) + 0.5 * normal.Normal(loc=0.,scale=1.).cdf(a*h) - normal.Normal(loc=0.,scale=1.).cdf(h) * normal.Normal(loc=0.,scale=1.).cdf(a*h)
     
     return 0.5 * (1. + tf.math.erf(1./(tf.constant(np.sqrt(2), dtype=self.dtype)*scale) * (x - self.loc))) - \

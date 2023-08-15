@@ -21,11 +21,11 @@ XENON_REF_DENSITY = 2.90
 
 
 class nestSource(fd.BlockModelSource):
-    def __init__(self, *args, detector='default',skew=False, **kwargs):
+    def __init__(self, *args, detector='default',**kwargs):
         assert detector in ('default', 'lz')
 
         self.detector = detector
-
+        
         assert os.path.exists(os.path.join(
             os.path.dirname(__file__), 'config/', detector + '.ini'))
 
@@ -36,7 +36,6 @@ class nestSource(fd.BlockModelSource):
         self.pressure = config.getfloat('NEST', 'pressure_config')
         self.drift_field = config.getfloat('NEST', 'drift_field_config')
         self.gas_field = config.getfloat('NEST', 'gas_field_config')
-        self.skew=skew
         # derived (known) parameters
         self.density = fd_nest.calculate_density(
             self.temperature, self.pressure)
@@ -139,8 +138,8 @@ class nestSource(fd.BlockModelSource):
 
     # secondary_quanta_generation.py
 
-    def electron_gain_mean(self, z,*,adjust_eyield=1.0):
-        elYield = adjust_eyield*(
+    def electron_gain_mean(self, z):
+        elYield = (
             0.137 * self.gas_field * 1e3 -
             4.70e-18 * (N_AVAGADRO * self.density_gas / A_XENON)) \
             * self.gas_gap * 0.1
@@ -303,8 +302,8 @@ class nestERSource(nestSource):
         skewness = tf.ones_like(nq_mean, dtype=fd.float_type()) * skew
         skewness_masked = tf.multiply(skewness, tf.cast(mask_product, fd.float_type()))
 
-        if ~self.skew:
-            skewness_masked = tf.cast(1e-4,fd.float_type())*tf.ones_like(nq_mean, dtype=fd.float_type())#intermediate fix for skew gaussian
+        if self.detector == 'lz':
+            skewness_masked = tf.zeros_like(nq_mean, dtype=fd.float_type())
         return skewness_masked
 
     def variance(self, *args):
