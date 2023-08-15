@@ -24,14 +24,7 @@ from tensorflow_probability.python.internal import tensor_util
 import flamedisx as fd
 
 export, __all__ = fd.exporter()
-@tf.custom_gradient
-def clip_grads(var):
-  """
-    takes in a single variable and clips the gradients to zero when it is zero or negative.
-  """
-  def grad(upstream):
-    return tf.where(var<=0,0.,upstream)
-  return var,grad
+
 
 @export
 class SkewGaussian(distribution.Distribution):
@@ -175,11 +168,19 @@ class SkewGaussian(distribution.Distribution):
 
     h = tf.cast((x - self.loc)/scale,'float32')
     a = tf.cast(skewness,'float32')
-    a=clip_grads(a)
+    @tf.custom_gradient
+    def clip_grad_by_a(var):
+      def grad(upstream):
+
+        return tf.where(a*tf.ones_like(var)<=0,0.,upstream)
+      return var,grad
     owens_t_eval = 0.5 * normal.Normal(loc=0.,scale=1.).cdf(h) + 0.5 * normal.Normal(loc=0.,scale=1.).cdf(a*h) - normal.Normal(loc=0.,scale=1.).cdf(h) * normal.Normal(loc=0.,scale=1.).cdf(a*h)
+    cdf=0.5 * (1. + tf.math.erf(1./(tf.constant(np.sqrt(2), dtype=self.dtype)*scale) * (x - self.loc)))
+    a=clip_grad_by_a(a)
+    h=clip_grad_by_a(h)
+    skewify=tf.cast(tf.where(a > tf.ones_like(a), 2. * (owens_t_eval - self.owensT1(a*h,1./a,self.owens_t_terms)), 2. * self.owensT1(h,a,self.owens_t_terms)),'float32')
+    return cdf-skewify
     
-    return 0.5 * (1. + tf.math.erf(1./(tf.constant(np.sqrt(2), dtype=self.dtype)*scale) * (x - self.loc))) - \
-    tf.cast(tf.where(a > tf.ones_like(a), 2. * (owens_t_eval - self.owensT1(a*h,1./a,self.owens_t_terms)), 2. * self.owensT1(h,a,self.owens_t_terms)),'float32')
 
   def _parameter_control_dependencies(self, is_init):
     assertions = []
