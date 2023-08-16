@@ -168,18 +168,12 @@ class SkewGaussian(distribution.Distribution):
 
     h = tf.cast((x - self.loc)/scale,'float32')
     a = tf.cast(skewness,'float32')
-    @tf.custom_gradient
-    def clip_grad_by_a(var):
-      def grad(upstream):
+    inv_a=tf.cast(tf.where(a>0.,1./a,tf.zeros_like(a)),'float32')
 
-        return tf.where(a*tf.ones_like(var)<=0,0.,upstream)
-      return var,grad
     owens_t_eval = 0.5 * normal.Normal(loc=0.,scale=1.).cdf(h) + 0.5 * normal.Normal(loc=0.,scale=1.).cdf(a*h) - normal.Normal(loc=0.,scale=1.).cdf(h) * normal.Normal(loc=0.,scale=1.).cdf(a*h)
-    cdf=0.5 * (1. + tf.math.erf(1./(tf.constant(np.sqrt(2), dtype=self.dtype)*scale) * (x - self.loc)))
-    a=clip_grad_by_a(a)
-    h=clip_grad_by_a(h)
-    skewify=tf.cast(tf.where(a > tf.ones_like(a), 2. * (owens_t_eval - self.owensT1(a*h,1./a,self.owens_t_terms)), 2. * self.owensT1(h,a,self.owens_t_terms)),'float32')
-    return cdf-skewify
+
+    return  0.5 * (1. + tf.math.erf(1./(tf.constant(np.sqrt(2), dtype=self.dtype)*scale) * (x - self.loc))) -\
+      tf.cast(tf.where(a > tf.ones_like(a), 2. * (owens_t_eval - self.owensT1(a*h,inv_a,self.owens_t_terms)), 2. * self.owensT1(h,a,self.owens_t_terms)),'float32')
     
 
   def _parameter_control_dependencies(self, is_init):
