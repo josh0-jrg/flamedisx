@@ -152,9 +152,9 @@ class SkewGaussian(distribution.Distribution):
     exp_hs = tf.math.exp(hs)
 
     ci = -1 + exp_hs
-    val = tf.math.atan(a) * tf.ones_like(hs)
-
-    for i in range(terms):
+    val = tf.math.atan(a) * tf.ones_like(hs)+ ci * a
+    ci= -ci + hs / tf.exp(tf.math.lgamma(tf.cast(2,'float32'))) * exp_hs
+    for i in range(1,terms):
         val += ci * tf.math.pow(a,2*tf.cast(i,'float32')+1) / (2*tf.cast(i,'float32')+1)
         ci = -ci + tf.math.pow(hs,tf.cast(i+1,'float32')) / tf.exp(tf.math.lgamma(tf.cast(i+2,'float32'))) * exp_hs
 
@@ -168,12 +168,11 @@ class SkewGaussian(distribution.Distribution):
 
     h = tf.cast((x - self.loc)/scale,'float32')
     a = tf.cast(skewness,'float32')
-    inv_a=tf.cast(tf.where(a>0.,1./a,tf.zeros_like(a)),'float32')
 
     owens_t_eval = 0.5 * normal.Normal(loc=0.,scale=1.).cdf(h) + 0.5 * normal.Normal(loc=0.,scale=1.).cdf(a*h) - normal.Normal(loc=0.,scale=1.).cdf(h) * normal.Normal(loc=0.,scale=1.).cdf(a*h)
 
     return  0.5 * (1. + tf.math.erf(1./(tf.constant(np.sqrt(2), dtype=self.dtype)*scale) * (x - self.loc))) -\
-      tf.cast(tf.where(a > tf.ones_like(a), 2. * (owens_t_eval - self.owensT1(a*h,inv_a,self.owens_t_terms)), 2. * self.owensT1(h,a,self.owens_t_terms)),'float32')
+      tf.cast(tf.where(a > tf.ones_like(a), 2. * (owens_t_eval - self.owensT1(a*h,tf.math.divide_no_nan(1.,a),self.owens_t_terms)), 2. * self.owensT1(h,a,self.owens_t_terms)),'float32')
     
 
   def _parameter_control_dependencies(self, is_init):
