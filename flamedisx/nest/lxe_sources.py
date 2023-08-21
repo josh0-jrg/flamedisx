@@ -369,20 +369,20 @@ class nestNRSource(nestSource):
 
     # quanta_splitting.py
 
-    def mean_yields(self, energy):
-        nr_nuis_a = 11.
-        nr_nuis_b = 1.1
-        nr_nuis_c = 0.0480
-        nr_nuis_d = -0.0533
-        nr_nuis_e = 12.6
-        nr_nuis_f = 0.3
-        nr_nuis_g = 2.
-        nr_nuis_h = 0.3
-        nr_nuis_i = 2
-        nr_nuis_j = 0.5
-        nr_nuis_k = 1.
-        nr_nuis_l = 1.
-
+    def mean_yields(self, energy
+        ,nr_nuis_a = 11.
+        ,nr_nuis_b = 1.1
+        ,nr_nuis_c = 0.0480
+        ,nr_nuis_d = -0.0533
+        ,nr_nuis_e = 12.6
+        ,nr_nuis_f = 0.3
+        ,nr_nuis_g = 2.
+        ,nr_nuis_h = 0.3
+        ,nr_nuis_i = 2
+        ,nr_nuis_j = 0.5
+        ,nr_nuis_k = 1.
+        ,nr_nuis_l = 1.
+        ):
         TIB = nr_nuis_c * pow(self.drift_field, nr_nuis_d) * pow(self.density / XENON_REF_DENSITY, 0.3)
         Qy = 1. / (TIB * pow(energy + nr_nuis_e, nr_nuis_j))
         Qy *= (1. - (1. / pow(1. + pow(energy / nr_nuis_f, nr_nuis_g), nr_nuis_k)))
