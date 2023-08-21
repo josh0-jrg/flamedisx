@@ -9,6 +9,20 @@ import flamedisx as fd
 export, __all__ = fd.exporter()
 o = tf.newaxis
 
+def unique(Tensor):
+    "Calculates unique elements of Tensor and gives and index to the original flattened shape"
+    flat_tensor=tf.reshape(Tensor,[-1])
+    approx_unique_tensor=tf.range(tf.reduce_min(flat_tensor),tf.reduce_max(flat_tensor)+tf.constant(1,dtype=tf.float32))
+    #allows comparison with tf.where
+    original_tensor_2D=tf.repeat(flat_tensor[:,o],tf.shape(approx_unique_tensor),axis=1)
+    unique_tensor_2D=tf.repeat(approx_unique_tensor[o,:],tf.shape(flat_tensor),axis=0)
+    return approx_unique_tensor,tf.where(tf.equal(original_tensor_2D,unique_tensor_2D))[:,1]
+
+@tf.custom_gradient
+def cutsom_grad_gather(params,indices,batch_dims):
+    def grad(upstream):
+        return upstream,None,None
+    return tf.gather_nd(params,indices,batch_dims)
 @export
 class MakePhotonsElectronsNR(fd.Block):
     is_ER = False
@@ -79,7 +93,7 @@ class MakePhotonsElectronsNR(fd.Block):
                     normal_dist_nq = tfp.distributions.Normal(loc=nq_mean,
                                                               scale=tf.sqrt(nq_mean * fano) + 1e-10) 
                     p_nq_1D=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
-                p_nq=tf.gather_nd(params=p_nq_1D,indices=index_nq[:,o],batch_dims=0)
+                p_nq=cutsom_grad_gather(params=p_nq_1D,indices=index_nq[:,o],batch_dims=0)
                 p_nq=tf.reshape(p_nq,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])#restore event dimension
                 p_nq=tf.repeat(p_nq[:,:,:,o],tf.shape(nq)[3],axis=3)
 
@@ -91,7 +105,7 @@ class MakePhotonsElectronsNR(fd.Block):
                 nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
                 ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
                 p_ni_2D=tfp.distributions.Binomial(total_count=nq_2D, probs=alpha).prob(ni_2D)
-                p_ni=tf.gather_nd(params=p_ni_2D,indices=index_nq[:,o],batch_dims=0)
+                p_ni=cutsom_grad_gather(params=p_ni_2D,indices=index_nq[:,o],batch_dims=0)
                 p_ni=tf.reshape(tf.reshape(p_ni,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
 
             else:
@@ -129,7 +143,7 @@ class MakePhotonsElectronsNR(fd.Block):
                 p_ni = tf.repeat(p_ni_1D[o,:], tf.shape(ions_produced)[2], axis=0)
                 p_ni = tf.repeat(p_ni[o,:, :], tf.shape(ions_produced)[1], axis=0)
                 p_ni = tf.repeat(p_ni[o,:, :, :], tf.shape(ions_produced)[0], axis=0)
-                p_nq=tf.gather_nd(params=p_nq_2D,indices=index_nq[:,o],batch_dims=0)
+                p_nq=cutsom_grad_gather(params=p_nq_2D,indices=index_nq[:,o],batch_dims=0)
                 p_nq=tf.reshape(tf.reshape(p_nq,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
 
 
@@ -166,7 +180,7 @@ class MakePhotonsElectronsNR(fd.Block):
                                                                         owens_t_terms=owens_t_terms).prob(nel_2D)
 
             
-            p_nel=tf.gather_nd(params=p_nel_1D,indices=index_nel[:,o],batch_dims=0)
+            p_nel=cutsom_grad_gather(params=p_nel_1D,indices=index_nel[:,o],batch_dims=0)
             p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
 
@@ -193,21 +207,12 @@ class MakePhotonsElectronsNR(fd.Block):
             return compute_single_energy(args, approx=True)
 
         nq = electrons_produced + photons_produced
-        #Reduce dimensionality from n_elxn_ph to n_q
-        # Replaces unique_quanta,index=tf.unique(tf.reshape(nq[:,:,:,0],[-1])) with some redundant nq
-        flat_nq=tf.reshape(nq[:,:,:,0],[-1])
-        unique_quanta=tf.range(tf.reduce_min(flat_nq),tf.reduce_max(flat_nq)+tf.constant(1,dtype=tf.float32))
-        OG_2D=tf.repeat(flat_nq[:,o],tf.shape(unique_quanta),axis=1)
-        range_2D=tf.repeat(unique_quanta[o,:],tf.shape(flat_nq),axis=0)
-        index_nq=tf.where(tf.equal(OG_2D,range_2D))[:,1]
-        #===Need to wrap into a function work in progress!====
+        #reduce degenerate dimensions
+        # unique_quanta,index_nq=unique(nq[:,:,:,0])#nevts x nph x nel->unique_nq
+        # unique_nel,index_nel=unique(electrons_produced[:,:,0,0])#nevts x nel->unique_nel
+        unique_quanta,index_nq=tf.unique(tf.reshape(nq[:,:,:,0],[-1]))
+        unique_nel,index_nel=tf.unique(tf.reshape(electrons_produced[:,:,0,0],[-1]))
 
-        #We can do the same for nelectrons to reduce calls!
-        flat_nel=tf.reshape(electrons_produced[:,:,0,0],[-1])
-        unique_nel=tf.range(tf.reduce_min(flat_nel),tf.reduce_max(flat_nel)+tf.constant(1,dtype=tf.float32))
-        OG_2D=tf.repeat(flat_nel[:,o],tf.shape(unique_nel),axis=1)
-        range_2D=tf.repeat(unique_nel[o,:],tf.shape(flat_nel),axis=0)
-        index_nel=tf.where(tf.equal(OG_2D,range_2D))[:,1]
 
         ions_min_initial = self.source._fetch('ions_produced_min', data_tensor=data_tensor)[:, 0, o]
         ions_min_initial = tf.repeat(ions_min_initial, tf.shape(ions_produced)[1], axis=1)
