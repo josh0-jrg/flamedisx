@@ -88,7 +88,7 @@ class MakePhotonsElectronsNR(fd.Block):
                     normal_dist_nq = tfp.distributions.Normal(loc=nq_mean,
                                                               scale=tf.sqrt(nq_mean * fano) + 1e-10) 
                     p_nq_1D=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
-                p_nq=tf.gather_nd(params=p_nq_1D,indices=index_nq[:,o],batch_dims=0)
+                p_nq=custom_gather_nq(p_nq_1D)#params=p_nq_1D,indices=index_nq[:,o],batch_dims=0)
                 p_nq=tf.reshape(p_nq,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])#restore event dimension
                 p_nq=tf.repeat(p_nq[:,:,:,o],tf.shape(nq)[3],axis=3)
 
@@ -100,7 +100,7 @@ class MakePhotonsElectronsNR(fd.Block):
                 nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
                 ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
                 p_ni_2D=tfp.distributions.Binomial(total_count=nq_2D, probs=alpha).prob(ni_2D)
-                p_ni=tf.gather_nd(params=p_ni_2D,indices=index_nq[:,o],batch_dims=0)
+                p_ni=custom_gather_nq(p_ni_2D)#params=p_ni_2D,indices=index_nq[:,o],batch_dims=0)
                 p_ni=tf.reshape(tf.reshape(p_ni,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
 
             else:
@@ -138,7 +138,7 @@ class MakePhotonsElectronsNR(fd.Block):
                 p_ni = tf.repeat(p_ni_1D[o,:], tf.shape(ions_produced)[2], axis=0)
                 p_ni = tf.repeat(p_ni[o,:, :], tf.shape(ions_produced)[1], axis=0)
                 p_ni = tf.repeat(p_ni[o,:, :, :], tf.shape(ions_produced)[0], axis=0)
-                p_nq=tf.gather_nd(params=p_nq_2D,indices=index_nq[:,o],batch_dims=0)
+                p_nq=custom_gather_nq(p_nq_2D)#params=p_nq_2D,indices=index_nq[:,o],batch_dims=0)
                 p_nq=tf.reshape(tf.reshape(p_nq,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
 
 
@@ -175,7 +175,7 @@ class MakePhotonsElectronsNR(fd.Block):
                                                                         owens_t_terms=owens_t_terms).prob(nel_2D)
 
             
-            p_nel=tf.gather_nd(params=p_nel_1D,indices=index_nel[:,o],batch_dims=0)
+            p_nel=custom_gather_nel(p_nel_1D)#params=p_nel_1D
             p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
 
@@ -207,7 +207,18 @@ class MakePhotonsElectronsNR(fd.Block):
         # unique_nel,index_nel=unique(electrons_produced[:,:,0,0])#nevts x nel->unique_nel
         unique_quanta,index_nq=tf.unique(tf.reshape(nq[:,:,:,0],[-1]))
         unique_nel,index_nel=tf.unique(tf.reshape(electrons_produced[:,:,0,0],[-1]))
-
+        @tf.custom_gradient
+        def custom_gather_nel(var):
+            def grad(upstream):
+                # print(tf.scatter_nd(indices=idx[:,o],updates=upstream,shape=tf.shape(var)))
+                return tf.scatter_nd(indices=index_nel[:,o],updates=upstream,shape=tf.shape(var))
+            return tf.gather_nd(var,index_nel[:,o]),grad#
+        @tf.custom_gradient
+        def custom_gather_nq(var):
+            def grad(upstream):
+                # print(tf.scatter_nd(indices=idx[:,o],updates=upstream,shape=tf.shape(var)))
+                return tf.scatter_nd(indices=index_nq[:,o],updates=upstream,shape=tf.shape(var))
+            return tf.gather_nd(var,index_nq[:,o]),grad
 
         ions_min_initial = self.source._fetch('ions_produced_min', data_tensor=data_tensor)[:, 0, o]
         ions_min_initial = tf.repeat(ions_min_initial, tf.shape(ions_produced)[1], axis=1)
