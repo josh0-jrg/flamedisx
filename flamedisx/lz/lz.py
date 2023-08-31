@@ -397,7 +397,12 @@ class LZERSource(LZSource, fd.nest.nestERSource):
         if ('detector' not in kwargs):
             kwargs['detector'] = 'lz'
         super().__init__(*args, **kwargs)
-
+@export
+class LZFasterERSource(LZSource, fd.nest.nestFasterERSource):
+    def __init__(self, *args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'lz'
+        super().__init__(*args, **kwargs)
 
 @export
 class LZGammaSource(LZSource, fd.nest.nestGammaSource):
