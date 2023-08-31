@@ -47,7 +47,6 @@ class MakePhotonsElectronsNR(fd.Block):
                  ions_produced,
                  # Dependency domain and value
                  energy, rate_vs_energy):
-        @tf.function
         def compute_single_energy(args, approx=False):
             # Compute the block for a single energy.
             # Set approx to True for an approximate computation at higher energies
