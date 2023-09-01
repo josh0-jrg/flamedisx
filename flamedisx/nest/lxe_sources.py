@@ -23,7 +23,6 @@ XENON_REF_DENSITY = 2.90
 class nestSource(fd.BlockModelSource):
     def __init__(self, *args, detector='default',**kwargs):
         assert detector in ('default', 'lz')
-
         self.detector = detector
         
         assert os.path.exists(os.path.join(
@@ -189,7 +188,7 @@ class nestSource(fd.BlockModelSource):
 
 @export
 class nestERSource(nestSource):
-    def __init__(self, *args, energy_min=0.01, energy_max=10., num_energies=1000, energy_bin_edges=None, **kwargs):
+    def __init__(self, *args, energy_min=0.01, energy_max=10., num_energies=1000, energy_bin_edges=None,E_max_dim_size={'energy': 100}, **kwargs):
         if not hasattr(self, 'energies'):
             if energy_bin_edges is not None:
                 self.energies = fd.np_to_tf(0.5 * (energy_bin_edges[1:] + energy_bin_edges[:-1]))
@@ -198,6 +197,7 @@ class nestERSource(nestSource):
                 self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
                                         fd.float_type())
                 self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
+        self.max_dim_size=E_max_dim_size #edits dimension size of energy
         super().__init__(*args, **kwargs)
 
     model_blocks = (
@@ -372,7 +372,7 @@ class nestERSource(nestSource):
 
 @export
 class nestNRSource(nestSource):
-    def __init__(self, *args, energy_min=0.01, energy_max=10., num_energies=1000, energy_bin_edges=None, **kwargs):
+    def __init__(self, *args, energy_min=0.01, energy_max=10., num_energies=1000, energy_bin_edges=None,E_max_dim_size={'energy': 150}, **kwargs):
         if not hasattr(self, 'energies'):
             if energy_bin_edges is not None:
                 self.energies = fd.np_to_tf(0.5 * (energy_bin_edges[1:] + energy_bin_edges[:-1]))
@@ -381,6 +381,7 @@ class nestNRSource(nestSource):
                 self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
                                         fd.float_type())
                 self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
+        self.max_dim_size=E_max_dim_size #edits dimension size of energy
         super().__init__(*args, **kwargs)
 
     model_blocks = (
