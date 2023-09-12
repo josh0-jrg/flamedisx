@@ -215,7 +215,7 @@ class nestERSource(nestSource):
 
     # quanta_splitting.py
 
-    def mean_yield_electron(self, energy,
+    def mean_yield_electron(self, energy,*,
                             er_m1_a=30.66,
                             er_m1_b=6.1978,
                             er_m1_c=30.66,
@@ -399,7 +399,7 @@ class nestNRSource(nestSource):
 
     # quanta_splitting.py
 
-    def mean_yields(self, energy
+    def mean_yields(self, energy,*
         ,nr_nuis_a = 11.
         ,nr_nuis_b = 1.1
         ,nr_nuis_c = 0.0480

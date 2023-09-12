@@ -81,7 +81,6 @@ class MakePhotonsElectronsNR(fd.Block):
                     p_nq_1D=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
                 p_nq=tf.gather_nd(params=p_nq_1D,indices=index_nq[:,o],batch_dims=0)
                 p_nq=tf.reshape(p_nq,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])#restore event dimension
-                p_nq=tf.repeat(p_nq[:,:,:,o],tf.shape(nq)[3],axis=3)
 
                 ex_ratio = self.gimme('exciton_ratio', data_tensor=data_tensor, ptensor=ptensor,
                                       bonus_arg=energy)
@@ -126,9 +125,6 @@ class MakePhotonsElectronsNR(fd.Block):
                     p_nq_2D = normal_dist_nq.cdf(nq_2D - ni_2D + 0.5) \
                         - normal_dist_nq.cdf(nq_2D - ni_2D - 0.5)
 
-                p_ni = tf.repeat(p_ni_1D[o,:], tf.shape(ions_produced)[2], axis=0)
-                p_ni = tf.repeat(p_ni[o,:, :], tf.shape(ions_produced)[1], axis=0)
-                p_ni = tf.repeat(p_ni[o,:, :, :], tf.shape(ions_produced)[0], axis=0)
                 p_nq=tf.gather_nd(params=p_nq_2D,indices=index_nq[:,o],batch_dims=0)
                 p_nq=tf.reshape(tf.reshape(p_nq,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
 
@@ -169,8 +165,12 @@ class MakePhotonsElectronsNR(fd.Block):
             p_nel=tf.gather_nd(params=p_nel_1D,indices=index_nel[:,o],batch_dims=0)
             p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
-
-            p_mult = p_nq * p_ni * p_nel
+            if self.is_ER:
+                p_mult = p_ni * p_nel
+                p_final = tf.reduce_sum(p_mult, 3)*tf.reduce_sum(p_nq,0)
+            else:
+                p_mult = p_nq*p_nel
+                p_final = tf.reduce_sum(p_mult, 3)*tf.reduce_sum(p_ni_1D,0)
 
             # Contract over ions_produced
             p_final = tf.reduce_sum(p_mult, 3)
