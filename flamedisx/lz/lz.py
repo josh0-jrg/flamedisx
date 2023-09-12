@@ -290,7 +290,7 @@ class LZSource:
             d['s2_pos_corr_latest'] = np.ones_like(d['x'].values)
 
         if 'event_time' in d.columns and 'electron_lifetime' not in d.columns:
-            d['electron_lifetime'] = self.get_elife(d['event_time'].values)
+            d['electron_lifetime'] = np.array(self.get_elife(d['event_time'].values))
 
         if 's1' in d.columns and 'cs1' not in d.columns:
             d['cs1'] = d['s1'] / d['s1_pos_corr_LZAP']
@@ -313,10 +313,10 @@ class LZSource:
                 / np.exp(d['drift_time'] / d['electron_lifetime']))
 
         if 'cs1' in d.columns and 'cs2' in d.columns and 'ces_er_equivalent' not in d.columns:
-            g1 = self.photon_detection_eff(0.)
-            g1_gas = self.s2_photon_detection_eff(0.)
-            g2 = fd_nest.calculate_g2(self.gas_field, self.density_gas, self.gas_gap,
-                                      g1_gas, self.extraction_eff)
+            g1 = float(self.photon_detection_eff(0.))
+            g1_gas = float(self.s2_photon_detection_eff(0.))
+            g2 = float(fd_nest.calculate_g2(self.gas_field, self.density_gas, self.gas_gap,
+                                      g1_gas, self.extraction_eff))
             d['ces_er_equivalent'] = (d['cs1'] / g1 + d['cs2'] / g2) * self.Wq_keV
 
         if 'cs1' in d.columns and 'cs1_acc_curve' not in d.columns:
