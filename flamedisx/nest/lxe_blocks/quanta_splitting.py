@@ -167,7 +167,7 @@ class MakePhotonsElectronsNR(fd.Block):
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
             if self.is_ER:
                 p_mult = p_ni * p_nel
-                p_final = tf.reduce_sum(p_mult, 3)*tf.reduce_sum(p_nq,0)
+                p_final = tf.reduce_sum(p_mult, 3)*p_nq
             else:
                 p_mult = p_nq*p_nel
                 p_final = tf.reduce_sum(p_mult, 3)*tf.reduce_sum(p_ni_1D,0)

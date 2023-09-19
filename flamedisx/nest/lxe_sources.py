@@ -218,7 +218,6 @@ class nestERSource(nestSource):
     def mean_yield_electron(self, energy,*,
                             er_m1_a=30.66,
                             er_m1_b=6.1978,
-                            er_m1_c=30.66,
                             er_m1_d=73.855,
                             er_m1_e=2.0318,
                             er_m1_f=0.41883,
@@ -249,7 +248,7 @@ class nestERSource(nestSource):
 
         Nq = energy * 1e3 / Wq_eV       
 
-        m1 = tf.cast(er_m1_a + (er_m1_b - er_m1_c) / pow(1. + pow(self.drift_field / er_m1_d, er_m1_e), er_m1_f),
+        m1 = tf.cast(er_m1_a + (er_m1_b - er_m1_a) / pow(1. + pow(self.drift_field / er_m1_d, er_m1_e), er_m1_f),
                      fd.float_type())
         m5 = tf.cast(Nq / energy / (1 + self.alpha * tf.math.erf(0.05 * energy)), fd.float_type()) - m1
         m10 = tf.cast((er_m10_a + (er_m10_b - er_m10_c) /
