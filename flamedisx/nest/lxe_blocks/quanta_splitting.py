@@ -172,9 +172,6 @@ class MakePhotonsElectronsNR(fd.Block):
                 p_mult = p_nq*p_nel
                 p_final = tf.reduce_sum(p_mult, 3)*tf.reduce_sum(p_ni_1D,0)
 
-            # Contract over ions_produced
-            p_final = tf.reduce_sum(p_mult, 3)
-
             r_final = p_final * rate_vs_energy
 
             r_final = tf.where(tf.math.is_nan(r_final),
