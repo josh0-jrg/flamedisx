@@ -53,7 +53,6 @@ class MakePhotonsElectronsNR(fd.Block):
             # Set approx to True for an approximate computation at higher energies
 
             energy = args[0]
-            rate_vs_energy = args[1]
             ions_min = args[2]
 
             ions_min = tf.repeat(ions_min[:, o], tf.shape(ions_produced)[1], axis=1)
@@ -74,22 +73,33 @@ class MakePhotonsElectronsNR(fd.Block):
             p_ni=tfp.distributions.Binomial(total_count=nq_2D, probs=alpha).prob(ni_2D)
 
             return p_ni
-        def compute_single_pnqER(args, approx=False):
+        def compute_single_pniER_degenerate(args, approx=False):
             # Compute the block for a single energy.
             # Set approx to True for an approximate computation at higher energies
 
             energy = args[0]
-            rate_vs_energy = args[1]
             ions_min = args[2]
 
             ions_min = tf.repeat(ions_min[:, o], tf.shape(ions_produced)[1], axis=1)
             ions_min = tf.repeat(ions_min[:, :, o], tf.shape(ions_produced)[2], axis=2)
             ions_min = tf.repeat(ions_min[:, :, :, o], tf.shape(ions_produced)[3], axis=3)
-
             # Calculate the ion domain tensor for this energy
             _ions_produced = ions_produced_add + ions_min
-            #every event in the batch shares E therefore ions domain
-            _ions_produced_1D=_ions_produced[0,0,0,:]
+            ex_ratio = self.gimme('exciton_ratio', data_tensor=data_tensor, ptensor=ptensor,
+                                    bonus_arg=energy)
+            alpha = 1. / (1. + ex_ratio)
+
+            # need to be a 2D distribution with a 2D input of nqxn_i so we can index nq
+
+            p_ni=tfp.distributions.Binomial(total_count=nq, probs=alpha).prob(_ions_produced)
+
+            return p_ni
+        def compute_single_pnqER(args, approx=False):
+            # Compute the block for a single energy.
+            # Set approx to True for an approximate computation at higher energies
+
+            energy = args[0]
+
             nel_mean = self.gimme('mean_yield_electron', data_tensor=data_tensor, ptensor=ptensor,
                                     bonus_arg=energy)
             nq_mean = self.gimme('mean_yield_quanta', data_tensor=data_tensor, ptensor=ptensor,
@@ -105,13 +115,32 @@ class MakePhotonsElectronsNR(fd.Block):
                                                             scale=tf.sqrt(nq_mean * fano) + 1e-10) 
                 p_nq=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
             return p_nq
+        def compute_single_pnqER_degenerate(args, approx=False):
+            # Compute the block for a single energy.
+            # Set approx to True for an approximate computation at higher energies
 
+            energy = args[0]
+
+            nel_mean = self.gimme('mean_yield_electron', data_tensor=data_tensor, ptensor=ptensor,
+                                    bonus_arg=energy)
+            nq_mean = self.gimme('mean_yield_quanta', data_tensor=data_tensor, ptensor=ptensor,
+                                    bonus_arg=(energy, nel_mean))
+            fano = self.gimme('fano_factor', data_tensor=data_tensor, ptensor=ptensor,
+                                bonus_arg=nq_mean)
+
+            if approx:
+                p_nq = tfp.distributions.Normal(loc=nq_mean,
+                                                scale=tf.sqrt(nq_mean * fano) + 1e-10).prob(nq)
+            else:
+                normal_dist_nq = tfp.distributions.Normal(loc=nq_mean,
+                                                            scale=tf.sqrt(nq_mean * fano) + 1e-10) 
+                p_nq=normal_dist_nq.cdf(nq + 0.5) - normal_dist_nq.cdf(nq - 0.5)
+            return p_nq
         def compute_single_pnel(args, approx=False):
             # Compute the block for a single energy.
             # Set approx to True for an approximate computation at higher energies
 
             energy = args[0]
-            rate_vs_energy = args[1]
             ions_min = args[2]
 
             ions_min = tf.repeat(ions_min[:, o], tf.shape(ions_produced)[1], axis=1)
@@ -173,7 +202,67 @@ class MakePhotonsElectronsNR(fd.Block):
                                                                         limit=ni_nel_2D,
                                                                         owens_t_terms=owens_t_terms).prob(nel_2D)
             return p_nel
+        def compute_single_pnel_degenerate(args, approx=False):
+            # Compute the block for a single energy.
+            # Set approx to True for an approximate computation at higher energies
 
+            energy = args[0]
+            ions_min = args[2]
+
+            ions_min = tf.repeat(ions_min[:, o], tf.shape(ions_produced)[1], axis=1)
+            ions_min = tf.repeat(ions_min[:, :, o], tf.shape(ions_produced)[2], axis=2)
+            ions_min = tf.repeat(ions_min[:, :, :, o], tf.shape(ions_produced)[3], axis=3)
+
+            # Calculate the ion domain tensor for this energy
+            _ions_produced = ions_produced_add + ions_min
+
+            if self.is_ER:
+                nel_mean = self.gimme('mean_yield_electron', data_tensor=data_tensor, ptensor=ptensor,
+                                        bonus_arg=energy)
+                nq_mean = self.gimme('mean_yield_quanta', data_tensor=data_tensor, ptensor=ptensor,
+                                        bonus_arg=(energy, nel_mean))
+                fano = self.gimme('fano_factor', data_tensor=data_tensor, ptensor=ptensor,
+                                    bonus_arg=nq_mean)
+                ex_ratio = self.gimme('exciton_ratio', data_tensor=data_tensor, ptensor=ptensor,
+                                              bonus_arg=energy)
+                alpha = 1. / (1. + ex_ratio)
+            else:
+                yields = self.gimme('mean_yields', data_tensor=data_tensor, ptensor=ptensor,
+                                            bonus_arg=energy)
+                nel_mean = yields[0]
+                nq_mean = yields[1]
+                ex_ratio = yields[2]
+                alpha = 1. / (1. + ex_ratio)
+
+            recomb_p = self.gimme('recomb_prob', data_tensor=data_tensor, ptensor=ptensor,
+                                    bonus_arg=(nel_mean, nq_mean, ex_ratio))
+            skew = self.gimme('skewness', data_tensor=data_tensor, ptensor=ptensor,
+                                bonus_arg=nq_mean)
+            var = self.gimme('variance', data_tensor=data_tensor, ptensor=ptensor,
+                                bonus_arg=(nel_mean, nq_mean, recomb_p, _ions_produced))
+            width_corr = self.gimme('width_correction', data_tensor=data_tensor, ptensor=ptensor,
+                                    bonus_arg=skew)
+            mu_corr = self.gimme('mu_correction', data_tensor=data_tensor, ptensor=ptensor,
+                                    bonus_arg=(skew, var, width_corr))
+
+            mean = (tf.ones_like(_ions_produced, dtype=fd.float_type()) - recomb_p) * _ions_produced - mu_corr
+            std_dev = tf.sqrt(var) / width_corr
+
+            if self.is_ER:
+                owens_t_terms = 5
+            else:
+                owens_t_terms = 5
+
+            if approx:
+                p_nel = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
+                                                skewness=skew,
+                                                owens_t_terms=owens_t_terms).prob(electrons_produced)
+            else:
+                p_nel =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
+                                                                        skewness=skew,
+                                                                        limit=_ions_produced,
+                                                                        owens_t_terms=owens_t_terms).prob(electrons_produced)
+            return p_nel
 
         def compute_ER(elems,approx=False):
             energy=elems[0]
