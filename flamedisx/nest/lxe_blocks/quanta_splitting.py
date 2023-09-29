@@ -413,13 +413,12 @@ class MakePhotonsElectronsNR(fd.Block):
             p_nq_degenerate = tf.vectorized_map(compute_single_pnqER_degenerate,elems)
             tf.print('p_nq ',tf.shape(p_nq))
             tf.print('p_nq_degenerate ',tf.shape(p_nq_degenerate)) 
+            tf.print('p_nq? ',tf.where(~(p_nq==p_nq_degenerate[:,:,:,:,0])) )
             #calculate and gather p_nel
             p_nel= tf.vectorized_map(compute_single_pnel,elems)
             p_nel=tf.gather_nd(params=p_nel,indices=index_E_nel[:,:,o],batch_dims=1)
             p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(energy)[0],tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
-            p_nel_degenerate= tf.vectorized_map(compute_single_pnel_degenerate,elems)
-            tf.print('p_nel? ',tf.where(~(p_nel==p_nel_degenerate)) )
             #calculate rate
             p_mult = p_ni * p_nel
             r_final = tf.tensordot(rate_vs_energy,tf.reduce_sum(p_mult, 4)*p_nq,axes=1)
@@ -432,7 +431,14 @@ class MakePhotonsElectronsNR(fd.Block):
             # Compute the block for a single energy, without continuity corrections
             # or truncated skew Gaussian
             return compute_ER(args, approx=True)
+        def compute_single_energy_full_degenerate(args):
+            # Compute the block for a single energy, without approximations
+            return compute_single_energy(args, approx=False)
 
+        def compute_single_energy_approx_degenerate(args):
+            # Compute the block for a single energy, without continuity corrections
+            # or truncated skew Gaussian
+            return compute_single_energy(args, approx=True)
         nq = electrons_produced + photons_produced
         #reduce degenerate dimensions
         # unique_quanta,index_nq=unique(nq[:,:,:,0])#nevts x nph x nel->unique_nq
@@ -474,10 +480,24 @@ class MakePhotonsElectronsNR(fd.Block):
         result_full =compute_single_energy_full([energy_full,
                                                              rate_vs_energy_full,
                                                              tf.transpose(ion_bounds_min_full)])
+
         result_approx = compute_single_energy_approx([energy_approx,
                                                                rate_vs_energy_approx,
                                                                tf.transpose(ion_bounds_min_approx)])
+        
 
+        result_full_degenerate = tf.reduce_sum(tf.vectorized_map(compute_single_energy_full_degenerate,
+                                                      elems=[energy_full,
+                                                             rate_vs_energy_full,
+                                                             tf.transpose(ion_bounds_min_full)]),
+                                    0)
+        result_approx_degenerate = tf.reduce_sum(tf.vectorized_map(compute_single_energy_approx_degenerate,
+                                                        elems=[energy_approx,
+                                                               rate_vs_energy_approx,
+                                                               tf.transpose(ion_bounds_min_approx)]),
+                                      0)
+        tf.print('full: \n',tf.where(~(result_full==result_full_degenerate)))
+        tf.print('approx: \n',tf.where(~(result_approx==result_approx_degenerate)))
         return (result_full + result_approx)
 
     def _simulate(self, d):
