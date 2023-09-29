@@ -273,15 +273,21 @@ class MakePhotonsElectronsNR(fd.Block):
             p_ni = tf.vectorized_map(compute_single_pniER,elems)
             p_ni=tf.gather_nd(params=p_ni,indices=index_E_nq[:,:,o],batch_dims=1)
             p_ni=tf.reshape(tf.reshape(p_ni,[-1]),[tf.shape(energy)[0],tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
+            p_ni_degenerate = tf.vectorized_map(compute_single_pniER_degenerate,elems)
+            tf.print('p_ni? ',tf.where(~(p_ni==p_ni_degenerate)) )
             #calculate and gather p_nq
             p_nq = tf.vectorized_map(compute_single_pnqER,elems)
             p_nq=tf.gather_nd(params=p_nq,indices=index_E_nq[:,:,o],batch_dims=1)
             p_nq=tf.reshape(p_nq,[tf.shape(energy)[0],tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])
+            p_nq_degenerate = tf.vectorized_map(compute_single_pnqER_degenerate,elems)
+            tf.print('p_nq? ',tf.where(~(p_nq==p_nq_degenerate)) )
             #calculate and gather p_nel
             p_nel= tf.vectorized_map(compute_single_pnel,elems)
             p_nel=tf.gather_nd(params=p_nel,indices=index_E_nel[:,:,o],batch_dims=1)
             p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(energy)[0],tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
+            p_nel_degenerate= tf.vectorized_map(compute_single_pnel_degenerate,elems)
+            tf.print('p_nel? ',tf.where(~(p_nel==p_nel_degenerate)) )
             #calculate rate
             p_mult = p_ni * p_nel
             r_final = tf.tensordot(rate_vs_energy,tf.reduce_sum(p_mult, 4)*p_nq,axes=1)
