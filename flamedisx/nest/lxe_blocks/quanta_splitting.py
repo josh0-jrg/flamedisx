@@ -280,7 +280,8 @@ class MakePhotonsElectronsNR(fd.Block):
             p_nq=tf.gather_nd(params=p_nq,indices=index_E_nq[:,:,o],batch_dims=1)
             p_nq=tf.reshape(p_nq,[tf.shape(energy)[0],tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])
             p_nq_degenerate = tf.vectorized_map(compute_single_pnqER_degenerate,elems)
-            tf.print('p_nq? ',tf.where(~(p_nq==p_nq_degenerate)) )
+            tf.print('p_nq ',tf.shape(p_nq))
+            tf.print('p_nq_degenerate ',tf.shape(p_nq_degenerate)) 
             #calculate and gather p_nel
             p_nel= tf.vectorized_map(compute_single_pnel,elems)
             p_nel=tf.gather_nd(params=p_nel,indices=index_E_nel[:,:,o],batch_dims=1)
