@@ -193,8 +193,8 @@ class MakePhotonsElectronsNR(fd.Block):
         # unique_nel,index_nel=unique(electrons_produced[:,:,0,0])#nevts x nel->unique_nel
         unique_quanta,index_nq=tf.unique(tf.reshape(nq[:,:,:,0],[-1]))
         unique_nel,index_nel=tf.unique(tf.reshape(electrons_produced[:,:,0,0],[-1]))
-        index_nq_3D=tf.rehsape(index_nq,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])
-        index_nel=tf.rehsape(index_nel,[tf.shape(electrons_produced)[0],tf.shape(electrons_produced)[1]])
+        index_nq_3D=tf.reshape(index_nq,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])
+        index_nel=tf.reshape(index_nel,[tf.shape(electrons_produced)[0],tf.shape(electrons_produced)[1]])
         
 
         ions_min_initial = self.source._fetch('ions_produced_min', data_tensor=data_tensor)[:, 0, o]
