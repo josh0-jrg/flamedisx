@@ -79,7 +79,7 @@ class MakePhotonsElectronsNR(fd.Block):
                     normal_dist_nq = tfp.distributions.Normal(loc=nq_mean,
                                                               scale=tf.sqrt(nq_mean * fano) + 1e-10) 
                     p_nq_1D=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
-                p_nq=tf.gather_nd(p_nq_1D,index_nq_3D)
+                p_nq=tf.gather(p_nq_1D,index_nq_3D,axis=0)
                 
 
                 ex_ratio = self.gimme('exciton_ratio', data_tensor=data_tensor, ptensor=ptensor,
@@ -90,7 +90,7 @@ class MakePhotonsElectronsNR(fd.Block):
                 nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
                 ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
                 p_ni_2D=tfp.distributions.Binomial(total_count=nq_2D, probs=alpha).prob(ni_2D)
-                p_ni=tf.gather(p_ni_2D,index_nq_3D,batch_dims=0)
+                p_ni=tf.gather(p_ni_2D,index_nq_3D,axis=0)
 
             else:
                 yields = self.gimme('mean_yields', data_tensor=data_tensor, ptensor=ptensor,
@@ -124,7 +124,7 @@ class MakePhotonsElectronsNR(fd.Block):
                     p_nq_2D = normal_dist_nq.cdf(nq_2D - ni_2D + 0.5) \
                         - normal_dist_nq.cdf(nq_2D - ni_2D - 0.5)
 
-                p_nq=tf.gather_nd(p_nq_2D,index_nq_3D,batch_dims=0)
+                p_nq=tf.gather(p_nq_2D,index_nq_3D,axis=0)
                 
 
 
@@ -161,7 +161,7 @@ class MakePhotonsElectronsNR(fd.Block):
                                                                         owens_t_terms=owens_t_terms).prob(nel_2D)
 
             
-            p_nel=tf.gather(p_nel_1D,index_nel,batch_dims=0)
+            p_nel=tf.gather(p_nel_1D,index_nel,axis=0)
             p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
             if self.is_ER:
                 p_mult = p_ni * p_nel
