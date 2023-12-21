@@ -211,7 +211,8 @@ class TSEvaluation():
                     observed_test_stats=None,
                     generate_B_toys=False,
                     simulate_dict_B=None, toy_data_B=None, constraint_extra_args_B=None,
-                    toy_batch=0):
+                    toy_batch=0,
+                    discovery_mode=False):
         """If observed_data is passed, evaluate observed test statistics. Otherwise,
         obtain test statistic distributions (for both S+B and B-only).
 
@@ -307,15 +308,21 @@ class TSEvaluation():
 
             these_mus_test = mus_test[signal_source]
             # Loop over signal rate multipliers
-            for mu_test in tqdm(these_mus_test, desc='Scanning over mus'):
+            for i,mu_test in tqdm(enumerate(these_mus_test), desc='Scanning over mus'):
                 # Case where we want observed test statistics
                 if observed_data is not None:
-                    self.get_observed_test_stat(observed_test_stats, observed_data,
+                    if discovery_mode:
+                        self.get_observed_test_stat(observed_test_stats, observed_data,
+                                                0., signal_source, likelihood, save_fits=save_fits)
+                        break 
+                    else:
+                        self.get_observed_test_stat(observed_test_stats, observed_data,
                                                 mu_test, signal_source, likelihood, save_fits=save_fits)
                 # Case where we want test statistic distributions
                 else:
                     self.toy_test_statistic_dist(test_stat_dists_SB, test_stat_dists_B,
-                                                 mu_test, signal_source, likelihood, save_fits=save_fits)
+                                                 mu_test, signal_source, likelihood, save_fits=save_fits,
+                                                 discovery_mode=discovery_mode,discovery_first_mu=(i==0))
 
             if observed_data is not None:
                 observed_test_stats_collection[signal_source] = observed_test_stats
@@ -366,7 +373,7 @@ class TSEvaluation():
         return simulate_dict, toy_data, constraint_extra_args
 
     def toy_test_statistic_dist(self, test_stat_dists_SB, test_stat_dists_B,
-                                mu_test, signal_source_name, likelihood, save_fits=False):
+                                mu_test, signal_source_name, likelihood, save_fits=False,discovery_mode=False,discovery_first_mu=True):
         """Internal function to get test statistic distribution.
         """
         ts_values_SB = []
@@ -396,15 +403,21 @@ class TSEvaluation():
                 if value < 0.1:
                     guess_dict_SB[key] = 0.1
             # Evaluate test statistic
-            ts_result_SB = test_statistic_SB(mu_test, signal_source_name, guess_dict_SB)
+            if discovery_mode:
+                # only want to evaluate t~(0|S(mu_test)+B_only) for each mu_test.
+                ts_result_SB = test_statistic_SB(0., signal_source_name, guess_dict_SB)
+            else:
+                ts_result_SB = test_statistic_SB(mu_test, signal_source_name, guess_dict_SB)
             # Save test statistic, and possibly fits
             ts_values_SB.append(ts_result_SB[0])
             if save_fits:
                 unconditional_bfs_SB.append(ts_result_SB[1])
                 conditional_bfs_SB.append(ts_result_SB[2])
-
+                    
             # B-only toys
-
+            if discovery_mode and not discovery_first_mu:
+                # only want to evaluate t~(0|B_only) once.
+                continue
             try:
                 # Guesses for fit
                 guess_dict_B = self.simulate_dict_B.copy()
