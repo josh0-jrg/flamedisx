@@ -507,18 +507,24 @@ class IntervalCalculator():
         - test_stat_dists_B: dictionary {sourcename: TestStatisticDistributions} returned
             by running TSEvaluation routine to get test statistic distirbutions under
             the B-only hypothesis
+        -discovery_mode: If True swaps B-only and SB-only distributions and assumes fix in StitchTSDist has been done
     """
     def __init__(
             self,
             signal_source_names: ty.Tuple[str],
             observed_test_stats: ObservedTestStatistics,
             test_stat_dists_SB: TestStatisticDistributions,
-            test_stat_dists_B: TestStatisticDistributions):
+            test_stat_dists_B: TestStatisticDistributions,
+            discovery_mode=False):
 
         self.signal_source_names = signal_source_names
         self.observed_test_stats = observed_test_stats
-        self.test_stat_dists_SB = test_stat_dists_SB
-        self.test_stat_dists_B = test_stat_dists_B
+        if discovery_mode:
+            self.test_stat_dists_SB = test_stat_dists_B
+            self.test_stat_dists_B = test_stat_dists_SB
+        else:
+            self.test_stat_dists_SB = test_stat_dists_SB
+            self.test_stat_dists_B = test_stat_dists_B
 
     @staticmethod
     def interp_helper(x, y, crossing_points, crit_val,
