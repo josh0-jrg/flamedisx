@@ -312,9 +312,9 @@ class TSEvaluation():
                 # Case where we want observed test statistics
                 if observed_data is not None:
                     if discovery_mode:
+                        #need conditional best fits for sampling constraints!
                         self.get_observed_test_stat(observed_test_stats, observed_data,
-                                                0., signal_source, likelihood, save_fits=save_fits)
-                        break 
+                                                mu_test, signal_source, likelihood, save_fits=save_fits)
                     else:
                         self.get_observed_test_stat(observed_test_stats, observed_data,
                                                 mu_test, signal_source, likelihood, save_fits=save_fits)
