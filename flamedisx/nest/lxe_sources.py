@@ -555,7 +555,6 @@ class nestERGammaWeightedSource(nestERSource):
 class nestFasterERSource(nestERSource):
     model_blocks = (fd_nest.FixedShapeEnergySpectrumFaster,) + nestERSource.model_blocks[1:]
 
-
 @export
 class nestSpatialRateERSource(nestERSource):
     model_blocks = (fd_nest.SpatialRateEnergySpectrumER,) + nestERSource.model_blocks[1:]
