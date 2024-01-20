@@ -3,11 +3,10 @@
 """
 import numpy as np
 import tensorflow as tf
-import pickle
+
 import configparser
 import os
 import pandas as pd
-from multihist import Histdd
 
 import flamedisx as fd
 from .. import nest as fd_nest
@@ -53,70 +52,6 @@ def build_position_map_from_data(map_file, axis_names, bins):
     mh.add(*add_args, weights=weights)
 
     return mh
-
-
-
-
-
-def create_spatial_hist(file_path,is_histdd=False,**kwargs):
-    """
-        Function to handle event-level data: 
-            data={x,y,z,dt[ns]/dt[us]/z[cm],energy spectra bin centers, eneregy spectre bin heights}
-        and a pickled Histdd
-        :param file_path: path to data 
-        :param is_histdd: whether event data or pickled Histdd
-        :param n_bins: Optional, customises binning of event data
-        :return: spatial_hist, energy spectra bin centers, eneregy spectra bin heights
-    """
-    def read_position_pkl(FilePath):
-        """
-        Reads in energy spectrum from .pkl file, 
-        e.g those generated with LZ's LZLAMA+BACCARAT->BGSKimmer/Assmbler
-        :param FilePath: path to the .pkl data file 
-        :return: array with neccessary data
-        """
-        #extract background position data
-        print("Loading Data From: %s"%FilePath)
-        with open(FilePath,'rb') as handle:
-            data_dict=pickle.load(handle)
-        keys=data_dict.keys()
-
-        i=data_dict['x[cm]']
-        j=data_dict['y[cm]']
-        weight=data_dict['weight']
-
-        k_key= list(keys)[2]
-        dt_ns=data_dict[k_key]
-        if k_key=='drift time[ns]':
-            z=(self.z_topDrift - dt_ns*self.drift_velocity)
-        elif k_key=='drift time[us]':
-            z=(self.z_topDrift - dt_ns*1000*self.drift_velocity)
-        elif k_key=='z[cm]':
-            z=dt_ns
-        else:
-            raise KeyError("Key error for coords: %s in LZdetNRSource: Require x/y/z[cm] for lenghts, theta[rad],  and drift time[ns] or [us] "%coord)
-        k=z
-        if 'energy_keV' and 'spectrum_value_norm' in keys:
-            value_energy=data_dict['energy_keV']
-            value_norm=data_dict['spectrum_value_norm']
-        return [i,j,k,weight,value_energy,value_norm]
-    if 'n_bins' not in kwargs:
-        kwargs['n_bins']=None
-    if ~is_histdd:
-        [i,j,k,weight,value_energy,value_norm]=read_position_pkl(file_path)
-        #create histogram
-        if kwargs['n_bins']==None:
-            kwargs['n_bins']=int(np.sqrt(len(i))/5)
-        mh = Histdd(
-            bins=kwargs['n_bins'],
-            range=[[min(i),max(i)],[min(j),max(j)],[min(k),max(k)]],
-            axis_names=['x','y','z']
-            )
-        mh.add(i,j,k,weights=weight)
-        return mh,value_energy,value_norm
-    else: 
-        return pickle.load(open(file_path, 'rb')), None,None
-        
 
 
 ##
@@ -290,7 +225,7 @@ class LZSource:
             d['s2_pos_corr_latest'] = np.ones_like(d['x'].values)
 
         if 'event_time' in d.columns and 'electron_lifetime' not in d.columns:
-            d['electron_lifetime'] = np.array(self.get_elife(d['event_time'].values))
+            d['electron_lifetime'] = self.get_elife(d['event_time'].values)
 
         if 's1' in d.columns and 'cs1' not in d.columns:
             d['cs1'] = d['s1'] / d['s1_pos_corr_LZAP']
@@ -313,11 +248,11 @@ class LZSource:
                 / np.exp(d['drift_time'] / d['electron_lifetime']))
 
         if 'cs1' in d.columns and 'cs2' in d.columns and 'ces_er_equivalent' not in d.columns:
-            g1 = float(self.photon_detection_eff(0.))
-            g1_gas = float(self.s2_photon_detection_eff(0.))
-            g2 = float(fd_nest.calculate_g2(self.gas_field, self.density_gas, self.gas_gap,
-                                      g1_gas, self.extraction_eff))
-            d['ces_er_equivalent'] = (d['cs1'] / g1 + d['cs2'] / g2) * self.Wq_keV
+            g1 = self.photon_detection_eff(0.)
+            g1_gas = self.s2_photon_detection_eff(0.)
+            g2 = fd_nest.calculate_g2(self.gas_field, self.density_gas, self.gas_gap,
+                                      g1_gas, self.extraction_eff)
+            d['ces_er_equivalent'] = (d['cs1'] / fd.tf_to_np(g1) + d['cs2'] / fd.tf_to_np(g2)) * self.Wq_keV
 
         if 'cs1' in d.columns and 'cs1_acc_curve' not in d.columns:
             if self.cs1_acc_domain is not None:
@@ -397,12 +332,7 @@ class LZERSource(LZSource, fd.nest.nestERSource):
         if ('detector' not in kwargs):
             kwargs['detector'] = 'lz'
         super().__init__(*args, **kwargs)
-@export
-class LZFasterERSource(LZSource, fd.nest.nestFasterERSource):
-    def __init__(self, *args, **kwargs):
-        if ('detector' not in kwargs):
-            kwargs['detector'] = 'lz'
-        super().__init__(*args, **kwargs)
+
 
 @export
 class LZGammaSource(LZSource, fd.nest.nestGammaSource):
@@ -435,6 +365,24 @@ class LZNRSource(LZSource, fd.nest.nestNRSource):
 
 @export
 class LZCH3TSource(LZSource, fd.nest.CH3TSource):
+    t_start = pd.to_datetime('2022-04-19T00:00:00')
+    t_start = t_start.tz_localize(tz='America/Denver')
+
+    t_stop = pd.to_datetime('2022-04-19T00:00:00')
+    t_stop = t_stop.tz_localize(tz='America/Denver')
+
+    def __init__(self, *args, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'lz'
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def get_elife(event_time):
+        return 6600000.
+
+
+@export
+class LZDDSource(LZSource, fd.nest.DDSource):
     t_start = pd.to_datetime('2022-04-19T00:00:00')
     t_start = t_start.tz_localize(tz='America/Denver')
 
@@ -782,47 +730,3 @@ class LZNRSourceGroup(LZSource, fd.nest.nestNRSourceGroup):
         if ('detector' not in kwargs):
             kwargs['detector'] = 'lz'
         super().__init__(*args, **kwargs)
-#Spatial sources:
-
-
-
-@export
-class LZDetNRSource(LZSource, fd.nest.SpatialNRSource):
-    """ 
-        DetNR source, with spatial variation
-        Use energy spectra derived from BACARRAT simulations 
-    """
-    def __init__(self,FilePath,*args, **kwargs):
-        if ('detector' not in kwargs):
-            kwargs['detector'] = 'lz'
-        mh,value_energy,value_norm=create_spatial_hist(FilePath,is_histdd=False,**kwargs)
-        self.energies = value_energy
-        self.rates_vs_energy = value_norm
-        super().__init__(mh=mh,*args, **kwargs)
-@export
-class LZSpatialFlatERSource(LZSource, fd.nest.SpatialERSource):
-    """ 
-        FlatER source, with spatial variation
-        use default flat energy spectra 
-    """
-    def __init__(self,FilePath,*args, **kwargs):
-        if ('detector' not in kwargs):
-            kwargs['detector'] = 'lz'
-        mh,value_energy,value_norm=create_spatial_hist(FilePath,is_histdd=False,**kwargs)
-        self.energies =tf.convert_to_tensor(np.arange(0.05,20.5,0.05), dtype=fd.float_type())
-        self.rates_vs_energy = tf.convert_to_tensor(np.full(len(self.energies),1/len(self.energies)), dtype=fd.float_type())
-        super().__init__(mh=mh,*args, **kwargs)
-@export
-class LZSpatialXe127Source(LZSource, fd.nest.SpatialERSource):
-    """ 
-        Xe127 source, with spatial variation
-        use default energy spectra for the two Electron-capture peaks that fall in the WSROI
-    """
-    def __init__(self, FilePath,*args, **kwargs):
-        if ('detector' not in kwargs):
-            kwargs['detector'] = 'lz'
-        mh,value_energy,value_norm=create_spatial_hist(FilePath,is_histdd=True,**kwargs)
-        df_127Xe = pd.read_pickle(os.path.join(os.path.dirname(__file__), 'background_spectra/127Xe_spectrum.pkl'))
-        self.energies = tf.convert_to_tensor(df_127Xe['energy_keV'].values, dtype=fd.float_type())
-        self.rates_vs_energy = tf.convert_to_tensor(df_127Xe['spectrum_value_norm'].values, dtype=fd.float_type())
-        super().__init__(mh=mh,*args, **kwargs)
