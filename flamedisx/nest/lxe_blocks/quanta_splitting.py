@@ -26,11 +26,18 @@ class MakePhotonsElectronsNR(fd.Block):
                                'variance', 'width_correction', 'mu_correction')
     model_functions = special_model_functions
 
+    ions_produced_min_full= None
+    ions_produced_max_full= None
+
     def setup(self):
-        self.array_columns = (('ions_produced_min',
-                               max(min(len(self.source.energies),
-                                       self.source.max_dim_sizes['energy']),
-                                   2)),)
+        if 'energy' not in self.source.no_step_dimensions:
+            self.array_columns = (('ions_produced_min',
+                                   max(min(len(self.source.energies),
+                                           self.source.max_dim_sizes['energy']),
+                                       2)),)
+        else:
+            self.array_columns = (('ions_produced_min',
+                                   max(len(self.source.energies), 2)),)
 
     def _compute(self,
                  data_tensor, ptensor,
@@ -40,7 +47,6 @@ class MakePhotonsElectronsNR(fd.Block):
                  ions_produced,
                  # Dependency domain and value
                  energy, rate_vs_energy):
-
         def compute_single_energy(args, approx=False):
             # Compute the block for a single energy.
             # Set approx to True for an approximate computation at higher energies
@@ -55,7 +61,12 @@ class MakePhotonsElectronsNR(fd.Block):
 
             # Calculate the ion domain tensor for this energy
             _ions_produced = ions_produced_add + ions_min
-
+            #every event in the batch shares E therefore ions domain
+            _ions_produced_1D=_ions_produced[0,0,0,:]
+            #create p_ni/p_nq domain for ER/NR
+            nq_2D=tf.repeat(unique_quanta[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
+            ni_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_quanta)[0],axis=0)
+            
             if self.is_ER:
                 nel_mean = self.gimme('mean_yield_electron', data_tensor=data_tensor, ptensor=ptensor,
                                       bonus_arg=energy)
@@ -65,19 +76,25 @@ class MakePhotonsElectronsNR(fd.Block):
                                   bonus_arg=nq_mean)
 
                 if approx:
-                    p_nq = tfp.distributions.Normal(loc=nq_mean,
-                                                    scale=tf.sqrt(nq_mean * fano) + 1e-10).prob(nq)
+                    p_nq_1D = tfp.distributions.Normal(loc=nq_mean,
+                                                    scale=tf.sqrt(nq_mean * fano) + 1e-10).prob(unique_quanta)
                 else:
                     normal_dist_nq = tfp.distributions.Normal(loc=nq_mean,
-                                                              scale=tf.sqrt(nq_mean * fano) + 1e-10)
-                    p_nq = normal_dist_nq.cdf(nq + 0.5) - normal_dist_nq.cdf(nq - 0.5)
+                                                              scale=tf.sqrt(nq_mean * fano) + 1e-10) 
+                    p_nq_1D=normal_dist_nq.cdf(unique_quanta + 0.5) - normal_dist_nq.cdf(unique_quanta - 0.5)
+                #restore p_ni from unique_nq x n_ions -> unique_nel x n_electrons x n_photons (does not need n_ions)
+                p_nq=tf.gather_nd(params=p_nq_1D,indices=index_nq[:,o],batch_dims=0)
+                p_nq=tf.reshape(p_nq,[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2]])
+                
 
                 ex_ratio = self.gimme('exciton_ratio', data_tensor=data_tensor, ptensor=ptensor,
                                       bonus_arg=energy)
                 alpha = 1. / (1. + ex_ratio)
 
-                p_ni = tfp.distributions.Binomial(
-                    total_count=nq, probs=alpha).prob(_ions_produced)
+                p_ni_2D=tfp.distributions.Binomial(total_count=nq_2D, probs=alpha).prob(ni_2D)
+                #restore p_ni from unique_nq x n_ions -> unique_nel x n_electrons x n_photons x n_ions
+                p_ni=tf.gather_nd(params=p_ni_2D,indices=index_nq[:,o],batch_dims=0)
+                p_ni=tf.reshape(tf.reshape(p_ni,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
 
             else:
                 yields = self.gimme('mean_yields', data_tensor=data_tensor, ptensor=ptensor,
@@ -91,58 +108,76 @@ class MakePhotonsElectronsNR(fd.Block):
                                         bonus_arg=nq_mean)
                 ni_fano = yield_fano[0]
                 nex_fano = yield_fano[1]
-
+                
+                #p_ni does not need to have an altered dimensionality, see tensordot.
                 if approx:
-                    p_ni = tfp.distributions.Normal(loc=nq_mean*alpha,
-                                                    scale=tf.sqrt(nq_mean*alpha*ni_fano) + 1e-10).prob(_ions_produced)
+                    p_ni_1D = tfp.distributions.Normal(loc=nq_mean*alpha,
+                                                    scale=tf.sqrt(nq_mean*alpha*ni_fano) + 1e-10).prob(_ions_produced_1D)
 
-                    p_nq = tfp.distributions.Normal(loc=nq_mean*alpha*ex_ratio,
+                    p_nq_2D = tfp.distributions.Normal(loc=nq_mean*alpha*ex_ratio,
                                                     scale=tf.sqrt(nq_mean*alpha*ex_ratio*nex_fano) + 1e-10).prob(
-                                                        nq - _ions_produced)
+                                                        nq_2D - ni_2D)
                 else:
                     normal_dist_ni = tfp.distributions.Normal(loc=nq_mean*alpha,
-                                                              scale=tf.sqrt(nq_mean*alpha) + 1e-10)
-                    p_ni = normal_dist_ni.cdf(_ions_produced + 0.5) - \
-                        normal_dist_ni.cdf(_ions_produced - 0.5)
+                                                              scale=tf.sqrt(nq_mean*alpha*ni_fano) + 1e-10)
+                    p_ni_1D = normal_dist_ni.cdf(_ions_produced_1D + 0.5) - \
+                        normal_dist_ni.cdf(_ions_produced_1D - 0.5)
 
                     normal_dist_nq = tfp.distributions.Normal(loc=nq_mean*alpha*ex_ratio,
-                                                              scale=tf.sqrt(nq_mean*alpha*ex_ratio) + 1e-10)
-                    p_nq = normal_dist_nq.cdf(nq - _ions_produced + 0.5) \
-                        - normal_dist_nq.cdf(nq - _ions_produced - 0.5)
+                                                              scale=tf.sqrt(nq_mean*alpha*ex_ratio*nex_fano) + 1e-10)
+                    p_nq_2D = normal_dist_nq.cdf(nq_2D - ni_2D + 0.5) \
+                        - normal_dist_nq.cdf(nq_2D - ni_2D - 0.5)
+
+                # restore p_nq from unique_nq x n_ions -> unique_nel x n_electrons x n_photons x n_ions
+                p_nq=tf.gather_nd(params=p_nq_2D,indices=index_nq[:,o],batch_dims=0)
+                p_nq=tf.reshape(tf.reshape(p_nq,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[2],tf.shape(nq)[3]])
+                
+
+
+            nel_2D=tf.repeat(unique_nel[:,o],tf.shape(_ions_produced_1D)[0],axis=1)
+            ni_nel_2D=tf.repeat(_ions_produced_1D[o,:],tf.shape(unique_nel)[0],axis=0)
 
             recomb_p = self.gimme('recomb_prob', data_tensor=data_tensor, ptensor=ptensor,
                                   bonus_arg=(nel_mean, nq_mean, ex_ratio))
             skew = self.gimme('skewness', data_tensor=data_tensor, ptensor=ptensor,
                               bonus_arg=nq_mean)
             var = self.gimme('variance', data_tensor=data_tensor, ptensor=ptensor,
-                             bonus_arg=(nel_mean, nq_mean, recomb_p, _ions_produced))
+                             bonus_arg=(nel_mean, nq_mean, recomb_p, ni_nel_2D))
             width_corr = self.gimme('width_correction', data_tensor=data_tensor, ptensor=ptensor,
                                     bonus_arg=skew)
             mu_corr = self.gimme('mu_correction', data_tensor=data_tensor, ptensor=ptensor,
                                  bonus_arg=(skew, var, width_corr))
 
-            mean = (tf.ones_like(_ions_produced, dtype=fd.float_type()) - recomb_p) * _ions_produced - mu_corr
+            mean = (tf.ones_like(ni_nel_2D, dtype=fd.float_type()) - recomb_p) * ni_nel_2D - mu_corr
             std_dev = tf.sqrt(var) / width_corr
 
             if self.is_ER:
                 owens_t_terms = 5
             else:
-                owens_t_terms = 2
+                owens_t_terms = 5
 
             if approx:
-                p_nel = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
-                                                  skewness=skew,
-                                                  owens_t_terms=owens_t_terms).prob(electrons_produced)
+                p_nel_1D = fd.tfp_files.SkewGaussian(loc=mean, scale=std_dev,
+                                                skewness=skew,
+                                                owens_t_terms=owens_t_terms).prob(nel_2D)
             else:
-                p_nel = fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
-                                                             skewness=skew,
-                                                             limit=_ions_produced,
-                                                             owens_t_terms=owens_t_terms).prob(electrons_produced)
+                p_nel_1D =fd.tfp_files.TruncatedSkewGaussianCC(loc=mean, scale=std_dev,
+                                                                        skewness=skew,
+                                                                        limit=ni_nel_2D,
+                                                                        owens_t_terms=owens_t_terms).prob(nel_2D)
 
-            p_mult = p_nq * p_ni * p_nel
-
-            # Contract over ions_produced
-            p_final = tf.reduce_sum(p_mult, 3)
+            
+            #Restore p_nel unique_nel x nions-> unique_nel x n_electrons x n_photons x n_ions
+            p_nel=tf.gather_nd(params=p_nel_1D,indices=index_nel[:,o],batch_dims=0)
+            p_nel=tf.reshape(tf.reshape(p_nel,[-1]),[tf.shape(nq)[0],tf.shape(nq)[1],tf.shape(nq)[3]])
+            p_nel=tf.repeat(p_nel[:,:,o,:],tf.shape(nq)[2],axis=2)
+            #modified contractions remove need for costly repeats in ions dimension.
+            if self.is_ER:
+                p_mult = p_ni * p_nel
+                p_final = tf.reduce_sum(p_mult, 3)*p_nq
+            else:
+                p_mult = p_nq*p_nel
+                p_final = tf.tensordot(p_mult,p_ni_1D,axes=[[3],[0]])
 
             r_final = p_final * rate_vs_energy
 
@@ -162,6 +197,12 @@ class MakePhotonsElectronsNR(fd.Block):
             return compute_single_energy(args, approx=True)
 
         nq = electrons_produced + photons_produced
+        #remove degenerate dimensions
+        # unique_quanta,index_nq=unique(nq[:,:,:,0])#nevts x nph x nel->unique_nq
+        # unique_nel,index_nel=unique(electrons_produced[:,:,0,0])#nevts x nel->unique_nel
+        unique_quanta,index_nq=tf.unique(tf.reshape(nq[:,:,:,0],[-1]))
+        unique_nel,index_nel=tf.unique(tf.reshape(electrons_produced[:,:,0,0],[-1]))
+        
 
         ions_min_initial = self.source._fetch('ions_produced_min', data_tensor=data_tensor)[:, 0, o]
         ions_min_initial = tf.repeat(ions_min_initial, tf.shape(ions_produced)[1], axis=1)
@@ -171,6 +212,7 @@ class MakePhotonsElectronsNR(fd.Block):
         # Work out the difference between each point in the ion domain and the lower bound,
         # for the lowest energy
         ions_produced_add = ions_produced - ions_min_initial
+
 
         # Energy above which we use the approximate computation
         if self.is_ER:
@@ -242,8 +284,15 @@ class MakePhotonsElectronsNR(fd.Block):
             d['ions_produced'] = np.where(ni_temp < 0,
                                           ni_temp * 0,
                                           ni_temp)
-
-            nex_temp = np.round(stats.norm.rvs(nq*alpha*ex_ratio, np.sqrt(nq*alpha*ex_ratio*nex_fano))).astype(int)
+            mean_nex=nq*alpha*ex_ratio
+            width_nex=mean_nex*nex_fano
+            mean_nex=np.where(mean_nex < 0,
+                                          mean_nex * 0,
+                                          mean_nex)
+            width_nex=np.where(width_nex < 0,
+                                          width_nex * 0,
+                                          width_nex)
+            nex_temp = np.round(stats.norm.rvs(mean_nex, np.sqrt(width_nex))).astype(int)
             # Don't let number of excitons go negative
             nex = np.where(nex_temp < 0,
                            nex_temp * 0,
@@ -277,7 +326,7 @@ class MakePhotonsElectronsNR(fd.Block):
     def _annotate(self, d):
         pass
 
-    def _annotate_special(self, d):
+    def _annotate_special(self, d, **kwargs):
         # Here we manually calculate ion bounds for each energy we will sum over in the spectrum
         # Simple computation, based on forward simulation procedure
 
@@ -316,13 +365,14 @@ class MakePhotonsElectronsNR(fd.Block):
             return (ions_produced_min, ions_produced_max)
 
         # Compute ion bounds for every energy in the full spectrum, once
-        if self.is_ER:
-            bounds = [get_bounds_ER(energy) for energy in self.source.energies.numpy()]
-        else:
-            bounds = [get_bounds_NR(energy) for energy in self.source.energies.numpy()]
+        if (self.ions_produced_min_full is None) or (self.ions_produced_max_full is None):
+            if self.is_ER:
+                bounds = [get_bounds_ER(energy) for energy in self.source.energies.numpy()]
+            else:
+                bounds = [get_bounds_NR(energy) for energy in self.source.energies.numpy()]
 
-        ions_produced_min_full = [x[0] for x in bounds]
-        ions_produced_max_full = [x[1] for x in bounds]
+            self.ions_produced_min_full = [x[0] for x in bounds]
+            self.ions_produced_max_full = [x[1] for x in bounds]
 
         for batch in range(self.source.n_batches):
             d_batch = d[batch * self.source.batch_size:(batch + 1) * self.source.batch_size]
@@ -336,20 +386,26 @@ class MakePhotonsElectronsNR(fd.Block):
 
             # Keep only the ion bounds corresponding to the energies in the trimmed
             # spectrum for this batch
-            ions_produced_min_full_trim = np.asarray(ions_produced_min_full)[
+            ions_produced_min_full_trim = np.asarray(self.ions_produced_min_full)[
                 (self.source.energies.numpy() >= energy_min) &
                 (self.source.energies.numpy() <= energy_max)]
-            ions_produced_max_full_trim = np.asarray(ions_produced_max_full)[
+            ions_produced_max_full_trim = np.asarray(self.ions_produced_max_full)[
                 (self.source.energies.numpy() >= energy_min) &
                 (self.source.energies.numpy() <= energy_max)]
 
-            index_step = np.round(np.linspace(0, len(energies_trim) - 1,
-                                              min(len(energies_trim), self.source.max_dim_sizes['energy']))).astype(int)
-
-            # Keep only the ion bounds corresponding to the energies in the stepped + trimmed
-            # spectrum for this batch
-            ions_produced_min = list(np.take(ions_produced_min_full_trim, index_step))
-            ions_produced_max = list(np.take(ions_produced_max_full_trim, index_step))
+            if 'energy' not in self.source.no_step_dimensions:
+                index_step = np.round(np.linspace(0, len(energies_trim) - 1,
+                                                  min(len(energies_trim),
+                                                      self.source.max_dim_sizes['energy']))).astype(int)
+                # Keep only the ion bounds corresponding to the energies in the stepped + trimmed
+                # spectrum for this batch
+                ions_produced_min = list(np.take(ions_produced_min_full_trim, index_step))
+                ions_produced_max = list(np.take(ions_produced_max_full_trim, index_step))
+            else:
+                # Keep only the ion bounds corresponding to the energies in the trimmed
+                # spectrum for this batch
+                ions_produced_min = list(ions_produced_min_full_trim)
+                ions_produced_max = list(ions_produced_max_full_trim)
 
             # For the events in the dataframe that are part of this batch, save the ion bounds at each energy
             # in the dataframe
@@ -361,7 +417,11 @@ class MakePhotonsElectronsNR(fd.Block):
 
         # If mono-energetic, one zero element at the end to get tensor dimensions
         # that match up with non-mono-energetic case; will be discarded later on
-        max_num_energies = max(min(len(self.source.energies), self.source.max_dim_sizes['energy']), 2)
+        if 'energy' not in self.source.no_step_dimensions:
+            max_num_energies = max(min(len(self.source.energies), self.source.max_dim_sizes['energy']), 2)
+        else:
+            max_num_energies = max(len(self.source.energies), 2)
+
         # Pad with 0s at the end to make each one the same size
         [bounds.extend([0]*(max_num_energies - len(bounds))) for bounds in d['ions_produced_min'].values]
 

@@ -61,7 +61,7 @@ def calculate_density_gas(temp, pressure):
 
 
 @export
-def calculate_drift_velocity(drift_field, density, temp):
+def calculate_drift_velocity(drift_field, density, temp, detector):
     """Returns drift_velocity in cm/ns
 
     """
@@ -120,7 +120,10 @@ def calculate_drift_velocity(drift_field, density, temp):
     if (speed <= 0.):
         raise ValueError("Negative drift velocity!")
 
-    return speed*1e-4
+    if detector == 'lz':
+        return speed * 1e-4 * (0.96 / 0.95)
+    else:
+        return speed * 1e-4
 
 
 @export
@@ -157,6 +160,16 @@ def calculate_extraction_eff(gas_field, temperature):
     extraction_eff = 1. - em1 * np.exp(-em2 * pow(liquid_field_interface, em3))
 
     return extraction_eff
+
+
+@export
+def calculate_g2(gas_field, density_gas, gas_gap, g1_gas, extraction_eff):
+    elYield = (
+        0.137 * gas_field * 1e3 -
+        4.70e-18 * (N_AVAGADRO * density_gas / A_XENON)) \
+        * gas_gap * 0.1
+
+    return elYield * g1_gas * extraction_eff
 
 
 @export

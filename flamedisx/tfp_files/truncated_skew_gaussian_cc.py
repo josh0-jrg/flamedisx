@@ -144,21 +144,22 @@ class TruncatedSkewGaussianCC(distribution.Distribution):
 
     cdf_upper = skew_gauss.cdf(x+0.5)
     cdf_lower = skew_gauss.cdf(x-0.5)
-
+    
     minus_inf = dtype_util.as_numpy_dtype(x.dtype)(-np.inf)
 
     bounded_log_prob = tf.where((x > limit),
                                 minus_inf,
-                                tf.math.log(cdf_upper - cdf_lower))
+                                tf.math.log(cdf_upper - cdf_lower+1e-11))
     bounded_log_prob = tf.where(tf.math.is_nan(bounded_log_prob),
                                 minus_inf,
                                 bounded_log_prob)
+    
     dumping_log_prob = tf.where((x == limit),
-                                tf.math.log(1 - cdf_lower),
+                                tf.math.log(1 - cdf_lower+1e-11),
                                 bounded_log_prob)
-
+    
     return dumping_log_prob
-
+  
   def _parameter_control_dependencies(self, is_init):
     assertions = []
 

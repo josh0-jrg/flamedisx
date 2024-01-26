@@ -3,6 +3,8 @@ import tensorflow as tf
 import configparser
 import os
 
+import pickle as pkl
+
 import flamedisx as fd
 from .. import nest as fd_nest
 
@@ -19,30 +21,29 @@ XENON_REF_DENSITY = 2.90
 
 
 class nestSource(fd.BlockModelSource):
-    def __init__(self, *args, detector='default', **kwargs):
-        assert detector in ('default',)
-
+    def __init__(self, *args, detector='default',**kwargs):
+        assert detector in ('default', 'lz')
+        self.detector = detector
+        
         assert os.path.exists(os.path.join(
             os.path.dirname(__file__), 'config/', detector + '.ini'))
 
         config = configparser.ConfigParser(inline_comment_prefixes=';')
         config.read(os.path.join(os.path.dirname(__file__), 'config/', detector + '.ini'))
-
         # common (known) parameters
         self.temperature = config.getfloat('NEST', 'temperature_config')
         self.pressure = config.getfloat('NEST', 'pressure_config')
         self.drift_field = config.getfloat('NEST', 'drift_field_config')
         self.gas_field = config.getfloat('NEST', 'gas_field_config')
-
         # derived (known) parameters
         self.density = fd_nest.calculate_density(
             self.temperature, self.pressure)
         # NOTE: BE CAREFUL WITH THE BELOW, ONLY VALID NEAR VAPOUR PRESSURE!!!
         self.density_gas = fd_nest.calculate_density_gas(
             self.temperature, self.pressure)
-        #
+        
         self.drift_velocity = fd_nest.calculate_drift_velocity(
-            self.drift_field, self.density, self.temperature)
+            self.drift_field, self.density, self.temperature, self.detector)
         self.Wq_keV, self.alpha = fd_nest.calculate_work(self.density)
 
         # energy_spectrum.py
@@ -55,7 +56,7 @@ class nestSource(fd.BlockModelSource):
 
         # detection.py / pe_detection.py / double_pe.py / final_signals.py
         self.g1 = config.getfloat('NEST', 'g1_config')
-        self.elife = config.getint('NEST', 'elife_config')
+        self.elife = config.getfloat('NEST', 'elife_config')
         self.extraction_eff = fd_nest.calculate_extraction_eff(self.gas_field, self.temperature)
         self.spe_res = config.getfloat('NEST', 'spe_res_config')
         self.spe_thr = config.getfloat('NEST', 'spe_thr_config')
@@ -77,10 +78,16 @@ class nestSource(fd.BlockModelSource):
         self.S1_noise = config.getfloat('NEST', 'S1_noise_config')
         self.S2_noise = config.getfloat('NEST', 'S2_noise_config')
 
+        self.s2_thr = config.getfloat('NEST', 's2_thr_config')
+
         self.S1_min = config.getfloat('NEST', 'S1_min_config')
         self.S1_max = config.getfloat('NEST', 'S1_max_config')
         self.S2_min = config.getfloat('NEST', 'S2_min_config')
         self.S2_max = config.getfloat('NEST', 'S2_max_config')
+
+        # Useful additional parameters
+        self.g2 = fd_nest.calculate_g2(self.gas_field, self.density_gas, self.gas_gap,
+                                       self.g1_gas, self.extraction_eff)
 
         super().__init__(*args, **kwargs)
 
@@ -98,7 +105,6 @@ class nestSource(fd.BlockModelSource):
         nel_mean = args[0]
         nq_mean = args[1]
         ex_ratio = args[2]
-
         elec_frac = nel_mean / nq_mean
         recomb_p = 1. - (ex_ratio + 1.) * elec_frac
 
@@ -182,10 +188,16 @@ class nestSource(fd.BlockModelSource):
 
 @export
 class nestERSource(nestSource):
-    def __init__(self, *args, energy_min=0.01, energy_max=10., num_energies=1000, **kwargs):
-        self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
-                                fd.float_type())
-        self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
+    def __init__(self, *args, energy_min=0.01, energy_max=10., num_energies=1000, energy_bin_edges=None,E_max_dim_size={'energy': 100}, **kwargs):
+        if not hasattr(self, 'energies'):
+            if energy_bin_edges is not None:
+                self.energies = fd.np_to_tf(0.5 * (energy_bin_edges[1:] + energy_bin_edges[:-1]))
+                self.rates_vs_energy = tf.ones(len(energy_bin_edges) - 1, fd.float_type())
+            else:
+                self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
+                                        fd.float_type())
+                self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
+        self.max_dim_size=E_max_dim_size #edits dimension size of energy
         super().__init__(*args, **kwargs)
 
     model_blocks = (
@@ -203,25 +215,53 @@ class nestERSource(nestSource):
 
     # quanta_splitting.py
 
-    def mean_yield_electron(self, energy):
+    def mean_yield_electron(self, energy,*,
+                            er_m1_a=30.66,
+                            er_m1_b=6.1978,
+                            er_m1_d=73.855,
+                            er_m1_e=2.0318,
+                            er_m1_f=0.41883,
+
+                            er_m10_a=0.0508273937,
+                            er_m10_b=0.1166087199,
+                            er_m10_c= 0.0508273937,
+                            er_m10_d=1.39260460e+02,
+                            er_m10_e=-0.65763592,
+
+                            er_Qy_a=77.2931084,
+                            er_Qy_b=0.13946236,
+                            er_Qy_c=0.52561312,
+                            er_Qy_d=1.82217496,
+                            er_Qy_e=2.82528809,
+                            er_Qy_f=1.82217496,
+                            er_Qy_g=144.65029656,
+                            er_Qy_h=-2.80532006,
+                            er_Qy_i=0.3344049589,
+                            er_Qy_k=7.02921301,
+                            er_Qy_l=98.27936794 ,
+                            er_Qy_m=7.0292130,
+                            er_Qy_n=256.48156448,
+                            er_Qy_o=1.29119251,
+                            er_Qy_p=4.285781736
+                            ):
         Wq_eV = self.Wq_keV * 1e3
 
-        Nq = energy * 1e3 / Wq_eV
+        Nq = energy * 1e3 / Wq_eV       
 
-        m1 = tf.cast(30.66 + (6.1978 - 30.66) / pow(1. + pow(self.drift_field / 73.855, 2.0318), 0.41883),
+        m1 = tf.cast(er_m1_a + (er_m1_b - er_m1_a) / pow(1. + pow(self.drift_field / er_m1_d, er_m1_e), er_m1_f),
                      fd.float_type())
         m5 = tf.cast(Nq / energy / (1 + self.alpha * tf.math.erf(0.05 * energy)), fd.float_type()) - m1
-        m10 = tf.cast((0.0508273937 + (0.1166087199 - 0.0508273937) /
-                      (1 + pow(self.drift_field / 1.39260460e+02, -0.65763592))),
+        m10 = tf.cast((er_m10_a + (er_m10_b - er_m10_c) /
+                      (1 + pow(self.drift_field / er_m10_d, er_m10_e))),
                       fd.float_type())
 
-        Qy = m1 + (77.2931084 - m1) / pow((1. + pow(energy / (fd.tf_log10(tf.cast(self.drift_field, fd.float_type())) *
-                                                    0.13946236 + 0.52561312),
-                                                    1.82217496 + (2.82528809 - 1.82217496) /
-                                                    (1 + pow(self.drift_field / 144.65029656, -2.80532006)))),
-                                          0.3344049589) + \
-            m5 + (0. - m5) / pow((1. + pow(energy / (7.02921301 + (98.27936794 - 7.02921301) /
-                                 (1. + pow(self.drift_field / 256.48156448, 1.29119251))), 4.285781736)), m10)
+        Qy = m1 + (er_Qy_a - m1) / pow((1. + pow(energy / (fd.tf_log10(tf.cast(self.drift_field, fd.float_type())) *
+                                                    er_Qy_b + er_Qy_c),
+                                                    er_Qy_d + (er_Qy_e - er_Qy_f) /
+                                                    (1 + pow(self.drift_field / er_Qy_g, er_Qy_h)))),
+                                          er_Qy_i) + \
+            m5 + (0. - m5) / pow((1. + pow(energy / (er_Qy_k + (er_Qy_l - er_Qy_m) /
+                                 (1. + pow(self.drift_field / er_Qy_n, er_Qy_o))), er_Qy_p)), m10)
 
         coeff_TI = tf.cast(pow(1. / XENON_REF_DENSITY, 0.3), fd.float_type())
         coeff_Ni = tf.cast(pow(1. / XENON_REF_DENSITY, 1.4), fd.float_type())
@@ -290,6 +330,8 @@ class nestERSource(nestSource):
         skewness = tf.ones_like(nq_mean, dtype=fd.float_type()) * skew
         skewness_masked = tf.multiply(skewness, tf.cast(mask_product, fd.float_type()))
 
+        if self.detector == 'lz':
+            skewness_masked = tf.zeros_like(nq_mean, dtype=fd.float_type())
         return skewness_masked
 
     def variance(self, *args):
@@ -298,7 +340,10 @@ class nestERSource(nestSource):
         recomb_p = args[2]
         ni = args[3]
 
-        er_free_b = 0.0553
+        if self.detector == 'lz':
+            er_free_b = 0.046452
+        else:
+            er_free_b = 0.0553
         er_free_c = 0.205
         er_free_d = 0.45
         er_free_e = -0.2
@@ -326,10 +371,16 @@ class nestERSource(nestSource):
 
 @export
 class nestNRSource(nestSource):
-    def __init__(self, *args, energy_min=0.01, energy_max=150., num_energies=1000, **kwargs):
-        self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
-                                fd.float_type())
-        self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
+    def __init__(self, *args, energy_min=0.01, energy_max=10., num_energies=1000, energy_bin_edges=None,E_max_dim_size={'energy': 150}, **kwargs):
+        if not hasattr(self, 'energies'):
+            if energy_bin_edges is not None:
+                self.energies = fd.np_to_tf(0.5 * (energy_bin_edges[1:] + energy_bin_edges[:-1]))
+                self.rates_vs_energy = tf.ones(len(energy_bin_edges) - 1, fd.float_type())
+            else:
+                self.energies = tf.cast(tf.linspace(energy_min, energy_max, num_energies),
+                                        fd.float_type())
+                self.rates_vs_energy = tf.ones(num_energies, fd.float_type())
+        self.max_dim_size=E_max_dim_size #edits dimension size of energy
         super().__init__(*args, **kwargs)
 
     model_blocks = (
@@ -347,23 +398,23 @@ class nestNRSource(nestSource):
 
     # quanta_splitting.py
 
-    def mean_yields(self, energy):
-        nr_nuis_a = 11.
-        nr_nuis_b = 1.1
-        nr_nuis_c = 0.0480
-        nr_nuis_d = -0.0533
-        nr_nuis_e = 12.6
-        nr_nuis_f = 0.3
-        nr_nuis_g = 2.
-        nr_nuis_h = 0.3
-        nr_nuis_i = 2
-        nr_nuis_j = 0.5
-        nr_nuis_k = 1.
-        nr_nuis_l = 1.
-
-        TIB = nr_nuis_c * pow(self.drift_field, nr_nuis_d) * pow(self.density / XENON_REF_DENSITY, 0.3)
-        Qy = 1. / (TIB * pow(energy + nr_nuis_e, nr_nuis_j))
-        Qy *= (1. - (1. / pow(1. + pow(energy / nr_nuis_f, nr_nuis_g), nr_nuis_k)))
+    def mean_yields(self, energy,*
+        ,nr_nuis_a = 11.
+        ,nr_nuis_b = 1.1
+        ,nr_nuis_c = 0.0480
+        ,nr_nuis_d = -0.0533
+        ,nr_nuis_e = 12.6
+        ,nr_nuis_f = 0.3
+        ,nr_nuis_g = 2.
+        ,nr_nuis_h = 0.3
+        ,nr_nuis_i = 2
+        ,nr_nuis_j = 0.5
+        ,nr_nuis_k = 1.
+        ,nr_nuis_l = 1.
+        ):
+        TIB = nr_nuis_c * tf.math.pow(self.drift_field, nr_nuis_d) * pow(self.density / XENON_REF_DENSITY, 0.3)
+        Qy = 1. / (TIB * tf.math.pow(energy + nr_nuis_e, nr_nuis_j))
+        Qy *= (1. - (1. / tf.math.pow(1. + tf.math.pow(tf.math.divide_no_nan(energy , nr_nuis_f), nr_nuis_g), nr_nuis_k)))
 
         nel_temp = Qy * energy
         # Don't let number of electrons go negative
@@ -373,7 +424,7 @@ class nestNRSource(nestSource):
 
         nq_temp = nr_nuis_a * pow(energy, nr_nuis_b)
 
-        nph_temp = (nq_temp - nel) * (1. - (1. / pow(1. + pow(energy / nr_nuis_h, nr_nuis_i), nr_nuis_l)))
+        nph_temp = (nq_temp - nel) * (1. - (1. / tf.math.pow(1. + pow(tf.math.divide_no_nan(energy , nr_nuis_h), nr_nuis_i), nr_nuis_l)))
         # Don't let number of photons go negative
         nph = tf.where(nph_temp < 0,
                        0 * nph_temp,
@@ -385,7 +436,7 @@ class nestNRSource(nestSource):
 
         nex = nq - ni
 
-        ex_ratio = tf.cast(nex / ni, fd.float_type())
+        ex_ratio = tf.cast(tf.math.divide_no_nan(nex , ni), fd.float_type())
 
         ex_ratio = tf.where(tf.logical_and(ex_ratio < self.alpha, energy > 100.),
                             self.alpha * tf.ones_like(ex_ratio, dtype=fd.float_type()),
@@ -399,10 +450,13 @@ class nestNRSource(nestSource):
 
         return nel, nq, ex_ratio
 
-    @staticmethod
-    def yield_fano(nq_mean):
-        nr_free_a = 1.
-        nr_free_b = 1.
+    def yield_fano(self, nq_mean):
+        if self.detector == 'lz':
+            nr_free_a = 0.4
+            nr_free_b = 0.4
+        else:
+            nr_free_a = 1.
+            nr_free_b = 1.
 
         ni_fano = tf.ones_like(nq_mean, dtype=fd.float_type()) * nr_free_a
         nex_fano = tf.ones_like(nq_mean, dtype=fd.float_type()) * nr_free_b
@@ -419,14 +473,16 @@ class nestNRSource(nestSource):
 
         return skewness_masked
 
-    @staticmethod
-    def variance(*args):
+    def variance(self, *args):
         nel_mean = args[0]
         nq_mean = args[1]
         recomb_p = args[2]
         ni = args[3]
 
-        nr_free_c = 0.1
+        if self.detector == 'lz':
+            nr_free_c = 0.04
+        else:
+            nr_free_c = 0.1
         nr_free_d = 0.5
         nr_free_e = 0.19
 
@@ -435,7 +491,7 @@ class nestNRSource(nestSource):
         omega = nr_free_c * tf.exp(-0.5 * pow(elec_frac - nr_free_d, 2.) / (nr_free_e * nr_free_e))
         omega = tf.where(nq_mean == 0,
                          tf.zeros_like(omega, dtype=fd.float_type()),
-                         omega)
+                         tf.cast(omega, dtype=fd.float_type()))
 
         return recomb_p * (1. - recomb_p) * ni + omega * omega * ni * ni
 
@@ -496,15 +552,63 @@ class nestERGammaWeightedSource(nestERSource):
 
 
 @export
+class nestFasterERSource(nestERSource):
+    model_blocks = (fd_nest.FixedShapeEnergySpectrumFaster,) + nestERSource.model_blocks[1:]
+
+@export
 class nestSpatialRateERSource(nestERSource):
-    model_blocks = (fd_nest.SpatialRateEnergySpectrum,) + nestERSource.model_blocks[1:]
+    model_blocks = (fd_nest.SpatialRateEnergySpectrumER,) + nestERSource.model_blocks[1:]
 
 
 @export
 class nestSpatialRateNRSource(nestNRSource):
-    model_blocks = (fd_nest.SpatialRateEnergySpectrum,) + nestNRSource.model_blocks[1:]
+    model_blocks = (fd_nest.SpatialRateEnergySpectrumNR,) + nestNRSource.model_blocks[1:]
+
+
+@export
+class nestTemporalRateDecayERSource(nestERSource):
+    model_blocks = (fd_nest.TemporalRateEnergySpectrumDecayER,) + nestERSource.model_blocks[1:]
+
+
+@export
+class nestTemporalRateDecayNRSource(nestNRSource):
+    model_blocks = (fd_nest.TemporalRateEnergySpectrumDecayNR,) + nestNRSource.model_blocks[1:]
+
+
+@export
+class nestSpatialTemporalRateDecayERSource(nestERSource):
+    model_blocks = (fd_nest.SpatialTemporalRateEnergySpectrumDecayER,) + nestERSource.model_blocks[1:]
+
+
+@export
+class nestSpatialTemporalRateDecayNRSource(nestNRSource):
+    model_blocks = (fd_nest.SpatialTemporalRateEnergySpectrumDecayNR,) + nestNRSource.model_blocks[1:]
+
+
+@export
+class nestTemporalRateOscillationERSource(nestERSource):
+    model_blocks = (fd_nest.TemporalRateEnergySpectrumOscillationER,) + nestERSource.model_blocks[1:]
+
+
+@export
+class nestTemporalRateOscillationNRSource(nestNRSource):
+    model_blocks = (fd_nest.TemporalRateEnergySpectrumOscillationNR,) + nestNRSource.model_blocks[1:]
 
 
 @export
 class nestWIMPSource(nestNRSource):
     model_blocks = (fd_nest.WIMPEnergySpectrum,) + nestNRSource.model_blocks[1:]
+
+    def __init__(self, *args, wimp_mass=40, **kwargs):
+        if ('detector' not in kwargs):
+            kwargs['detector'] = 'default'
+
+        self.energy_hist = pkl.load(open(os.path.join(os.path.dirname(__file__), 'wimp_spectra/WIMP_spectra.pkl'), 'rb'))[wimp_mass]
+
+        self.n_time_bins = len(self.energy_hist.bin_edges[0])
+        e_centers = fd_nest.WIMPEnergySpectrum.bin_centers(self.energy_hist.bin_edges[1])
+        self.energies = fd.np_to_tf(e_centers)
+
+        self.array_columns = (('energy_spectrum', len(e_centers)),)
+
+        super().__init__(*args, **kwargs)
