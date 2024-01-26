@@ -412,9 +412,9 @@ class nestNRSource(nestSource):
         ,nr_nuis_k = 1.
         ,nr_nuis_l = 1.
         ):
-        TIB = nr_nuis_c * pow(self.drift_field, nr_nuis_d) * pow(self.density / XENON_REF_DENSITY, 0.3)
-        Qy = 1. / (TIB * pow(energy + nr_nuis_e, nr_nuis_j))
-        Qy *= (1. - (1. / pow(1. + pow(energy / nr_nuis_f, nr_nuis_g), nr_nuis_k)))
+        TIB = nr_nuis_c * tf.math.pow(self.drift_field, nr_nuis_d) * pow(self.density / XENON_REF_DENSITY, 0.3)
+        Qy = 1. / (TIB * tf.math.pow(energy + nr_nuis_e, nr_nuis_j))
+        Qy *= (1. - (1. / tf.math.pow(1. + tf.math.pow(tf.math.divide_no_nan(energy , nr_nuis_f), nr_nuis_g), nr_nuis_k)))
 
         nel_temp = Qy * energy
         # Don't let number of electrons go negative
@@ -424,7 +424,7 @@ class nestNRSource(nestSource):
 
         nq_temp = nr_nuis_a * pow(energy, nr_nuis_b)
 
-        nph_temp = (nq_temp - nel) * (1. - (1. / pow(1. + pow(energy / nr_nuis_h, nr_nuis_i), nr_nuis_l)))
+        nph_temp = (nq_temp - nel) * (1. - (1. / tf.math.pow(1. + pow(tf.math.divide_no_nan(energy , nr_nuis_h), nr_nuis_i), nr_nuis_l)))
         # Don't let number of photons go negative
         nph = tf.where(nph_temp < 0,
                        0 * nph_temp,
@@ -436,7 +436,7 @@ class nestNRSource(nestSource):
 
         nex = nq - ni
 
-        ex_ratio = tf.cast(nex / ni, fd.float_type())
+        ex_ratio = tf.cast(tf.math.divide_no_nan(nex , ni), fd.float_type())
 
         ex_ratio = tf.where(tf.logical_and(ex_ratio < self.alpha, energy > 100.),
                             self.alpha * tf.ones_like(ex_ratio, dtype=fd.float_type()),
