@@ -25,7 +25,7 @@ LOWER_RATE_MULTIPLIER_BOUND = 1e-9
 # Floating point precision of 32-bit computations
 FLOAT32_EPS = np.finfo(np.float32).eps
 
-
+# asdsadsadsadas
 class OptimizerWarning(UserWarning):
     pass
 
